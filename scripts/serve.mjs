@@ -22,13 +22,14 @@ const MIME_TYPES = {
 const cache = new Map();
 
 function getCachedFile(filePath) {
+  const stat = fs.statSync(filePath);
   const hit = cache.get(filePath);
-  if (hit) return hit;
+  if (hit && hit.mtimeMs === stat.mtimeMs) return hit;
   const raw = fs.readFileSync(filePath);
   const ext = path.extname(filePath).toLowerCase();
   const mime = MIME_TYPES[ext] || 'application/octet-stream';
   const gzipped = zlib.gzipSync(raw, { level: 6 });
-  const entry = { raw, gzipped, mime };
+  const entry = { raw, gzipped, mime, mtimeMs: stat.mtimeMs };
   cache.set(filePath, entry);
   return entry;
 }

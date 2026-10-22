@@ -211,10 +211,15 @@ export class BattleScene extends Phaser.Scene {
     cam.pan(WORLD_WIDTH * 0.5, targetY, 340, 'Sine.easeInOut', true);
   }
 
+  private getDpr(): number {
+    return Math.min(window.devicePixelRatio || 2, 2);
+  }
+
   private getDefaultZoom(): number {
     const vw = this.scale.width || 412;
-    // Fits all 9 flat-top hex columns comfortably across mobile screen!
-    return Math.min(1.12, Math.max(0.62, vw / (WORLD_WIDTH - 24)));
+    const dpr = this.getDpr();
+    // Fits all 9 flat-top hex columns crisply at native Retina pixel resolution!
+    return Math.min(1.15 * dpr, Math.max(0.62 * dpr, vw / (WORLD_WIDTH - 24)));
   }
 
   private fitCameraBounds(snapToPlayerBase: boolean): void {
@@ -261,7 +266,8 @@ export class BattleScene extends Phaser.Scene {
           this.initialPinchZoom = cam.zoom;
         } else {
           const factor = dist / this.initialPinchDist;
-          const nextZoom = Phaser.Math.Clamp(this.initialPinchZoom * factor, 0.44, 1.35);
+          const dpr = this.getDpr();
+          const nextZoom = Phaser.Math.Clamp(this.initialPinchZoom * factor, 0.44 * dpr, 1.45 * dpr);
           cam.setZoom(nextZoom);
         }
         this.dragMovedDist = 999;
@@ -275,7 +281,7 @@ export class BattleScene extends Phaser.Scene {
       const dy = pointer.y - this.dragStartY;
       this.dragMovedDist = Math.hypot(dx, dy);
 
-      if (this.dragMovedDist > 6) {
+      if (this.dragMovedDist > 6 * this.getDpr()) {
         cam.scrollX = this.camStartScrollX - dx / cam.zoom;
         cam.scrollY = this.camStartScrollY - dy / cam.zoom;
       }
@@ -288,10 +294,17 @@ export class BattleScene extends Phaser.Scene {
 
       if (this.isIdleBackdrop || this.matchEnded || this.isPaused) return;
 
-      // Treat clean tap (< 12px finger movement) as world interaction!
-      if (this.dragMovedDist < 12) {
+      // Treat clean tap (< 14 CSS px finger movement) as world interaction!
+      const dpr = this.getDpr();
+      if (this.dragMovedDist < 14 * dpr) {
         const worldPt = cam.getWorldPoint(pointer.x, pointer.y);
-        this.handleWorldTap(worldPt.x, worldPt.y, pointer.x, pointer.y, pointer.getDuration() > 420);
+        this.handleWorldTap(
+          worldPt.x,
+          worldPt.y,
+          pointer.x / dpr,
+          pointer.y / dpr,
+          pointer.getDuration() > 420
+        );
       }
     });
 
@@ -299,8 +312,9 @@ export class BattleScene extends Phaser.Scene {
       'wheel',
       (_pointer: Phaser.Input.Pointer, _gos: unknown[], _dx: number, dy: number) => {
         if (this.isIdleBackdrop) return;
+        const dpr = this.getDpr();
         if (_pointer.event && (_pointer.event as WheelEvent).ctrlKey) {
-          const nextZoom = Phaser.Math.Clamp(cam.zoom - dy * 0.0012, 0.44, 1.35);
+          const nextZoom = Phaser.Math.Clamp(cam.zoom - dy * 0.0012 * dpr, 0.44 * dpr, 1.45 * dpr);
           cam.setZoom(nextZoom);
         } else {
           // Smooth mouse-wheel scroll up/down battlefield on desktop!
@@ -311,13 +325,14 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private tryHandleMinimapTap(sx: number, sy: number): boolean {
+    const dpr = this.getDpr();
     const vw = this.scale.width;
     const vh = this.scale.height;
-    const mapW = 46;
-    const mapH = 136;
-    const mx = vw - mapW - 8;
-    const my = Math.max(108, vh * 0.5 - mapH * 0.5);
-    if (sx >= mx - 6 && sx <= mx + mapW + 6 && sy >= my - 6 && sy <= my + mapH + 6) {
+    const mapW = 46 * dpr;
+    const mapH = 136 * dpr;
+    const mx = vw - mapW - 8 * dpr;
+    const my = Math.max(108 * dpr, vh * 0.5 - mapH * 0.5);
+    if (sx >= mx - 6 * dpr && sx <= mx + mapW + 6 * dpr && sy >= my - 6 * dpr && sy <= my + mapH + 6 * dpr) {
       const ratioY = Phaser.Math.Clamp((sy - my) / mapH, 0, 1);
       this.cameras.main.pan(WORLD_WIDTH * 0.5, ratioY * WORLD_HEIGHT, 200, 'Sine.easeOut', true);
       sound.playClick();
@@ -459,19 +474,21 @@ export class BattleScene extends Phaser.Scene {
 
         const variant = (q + r) % 2;
         const texKey = isWater
-          ? 'hex_water_0'
+          ? 'hex_sand_0'
           : owner === 'player'
             ? `hex_grass_${variant}`
             : `hex_sand_${variant}`;
 
-        const tileSprite = this.add.image(pos.x, pos.y, texKey).setScale(TEX_SCALE);
-        if (isWater) tileSprite.setVisible(false); // Let natural ocean + coastal rim show cleanly!
+        const hexDispW = HEX_RADIUS * 2.08;
+        const hexDispH = HEX_RADIUS * Math.sqrt(3) * 1.05;
+        const tileSprite = this.add.image(pos.x, pos.y, texKey).setDisplaySize(hexDispW, hexDispH);
+        if (isWater) tileSprite.setVisible(false);
         this.terrainLayer.add(tileSprite);
 
         const hasGemDeposit = !isWater && gemLocations.has(key);
         let gemSprite: Phaser.GameObjects.Image | undefined;
         if (hasGemDeposit) {
-          gemSprite = this.add.image(pos.x, pos.y + 1, 'gem_ring').setScale(TEX_SCALE * 0.96);
+          gemSprite = this.add.image(pos.x, pos.y + 1, 'gem_ring').setDisplaySize(76, 68);
           this.terrainLayer.add(gemSprite);
         }
 
@@ -492,18 +509,38 @@ export class BattleScene extends Phaser.Scene {
       }
     }
 
-    // Add coastal palm trees around top desert oasis & bottom tropical shore (like Screenshots 6 & 7!)
+    this.terrainLayer.add(coastShelf);
+    this.terrainLayer.sendToBack(coastShelf);
+
+    // Coastal 3D Palm Trees + Ancient Sandstone Ruins matching Screenshots 1, 6, and 7!
     const palmCoords = [
-      { x: 95, y: 62 },
-      { x: 265, y: 54 },
-      { x: 485, y: 68 },
-      { x: 110, y: WORLD_HEIGHT - 68 },
-      { x: 350, y: WORLD_HEIGHT - 62 },
-      { x: 515, y: WORLD_HEIGHT - 70 },
+      { x: 92, y: 58 },
+      { x: 265, y: 50 },
+      { x: 488, y: 64 },
+      { x: 108, y: WORLD_HEIGHT - 56 },
+      { x: 348, y: WORLD_HEIGHT - 52 },
+      { x: 512, y: WORLD_HEIGHT - 58 },
     ];
     for (const p of palmCoords) {
-      const palm = this.add.image(p.x, p.y, 'prop_palm').setScale(TEX_SCALE * 1.15).setAlpha(0.95);
+      const palm = this.add.image(p.x, p.y, 'prop_palm').setDisplaySize(72, 72);
       this.terrainLayer.add(palm);
+      this.tweens.add({
+        targets: palm,
+        rotation: 0.045,
+        duration: 1800 + Math.random() * 500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+    const ruinCoords = [
+      { x: 54, y: WORLD_HEIGHT - 64 },
+      { x: 422, y: WORLD_HEIGHT - 56 },
+      { x: WORLD_WIDTH - 34, y: hexToWorld(8, 10).y + 6 },
+    ];
+    for (const rc of ruinCoords) {
+      const ruin = this.add.image(rc.x, rc.y, 'prop_ruins').setDisplaySize(64, 64);
+      this.terrainLayer.add(ruin);
     }
 
     // Spawn Player Initial Base + Initial Gold Mine (Exact match to Screenshot 6!)
@@ -630,18 +667,19 @@ export class BattleScene extends Phaser.Scene {
 
     const container = this.add.container(cell.x, cell.y);
     const texKey = this.getBuildingTextureKey(team, cardId, isCommandCenter);
-    const sprite = this.add.image(0, -4, texKey).setScale(TEX_SCALE * 0.96);
+    const bldgSize = isCommandCenter ? 74 : 66;
+    const sprite = this.add.image(0, -3, texKey).setDisplaySize(bldgSize, bldgSize);
     const progressArc = this.add.graphics();
     const hpBar = this.add.graphics();
 
     container.add([sprite, progressArc, hpBar]);
 
-    // Unit badge tag on military spawner buildings so players can read both their own AND enemy's buildings!
+    // Mini 3D unit sprite badge on military spawner buildings so players instantly recognize what spawns here!
     if (!isCommandCenter && cardId !== 'gold_mine' && CARDS[cardId]?.slotType === 'unit') {
       const suffix = team === 'player' ? 'blue' : 'red';
       const unitMini = this.add
-        .image(14, -17, `icon_${cardId}_${suffix}`)
-        .setScale(TEX_SCALE * 0.46);
+        .image(15, -18, `unit_${cardId}_${suffix}`)
+        .setDisplaySize(26, 26);
       container.add(unitMini);
     }
 
@@ -859,23 +897,12 @@ export class BattleScene extends Phaser.Scene {
           container.add(mineHalo);
         }
 
-        const pinBg = this.add.image(0, -9, 'pin_ready').setScale(TEX_SCALE * 0.96);
-
-        const iconKey =
-          card.slotType === 'unit'
-            ? `icon_${cardId}_blue`
-            : this.getBuildingTextureKey('player', cardId, false);
-        const miniIcon = this.add.image(0, -12, iconKey).setScale(TEX_SCALE * 0.42);
-
-        // Gold coin circle + cost text right below teardrop point (exact match to Screenshot 6!)
-        const coinDot = this.add.graphics();
-        coinDot.fillStyle(0xffca28, 1);
-        coinDot.lineStyle(1.4, 0x8d4e00, 1);
-        coinDot.fillCircle(-15, 13, 5.5);
-        coinDot.strokeCircle(-15, 13, 5.5);
+        const pinBg = this.add.image(0, -8, 'pin_ready').setDisplaySize(42, 42);
+        const miniIcon = this.add.image(0, -11, `card_${cardId}`).setDisplaySize(25, 25);
+        const coinIco = this.add.image(-14, 14, 'ui_coin').setDisplaySize(13, 13);
 
         const costText = this.add
-          .text(-7, 13, `${cost}`, {
+          .text(-6, 14, `${cost}`, {
             fontFamily: 'system-ui, -apple-system, sans-serif',
             fontSize: '13px',
             fontStyle: 'bold',
@@ -885,7 +912,7 @@ export class BattleScene extends Phaser.Scene {
           })
           .setOrigin(0, 0.5);
 
-        container.add([pinBg, miniIcon, coinDot, costText]);
+        container.add([pinBg, miniIcon, coinIco, costText]);
         this.pinLayer.add(container);
 
         pin.container = container;
@@ -1015,7 +1042,7 @@ export class BattleScene extends Phaser.Scene {
     }
     this.updatePinAffordabilityVisuals();
     this.configData?.onToast(
-      `🔨 科技升至 Lv.${this.playerTechLevel}！全军伤害 +${(this.playerTechLevel - 1) * 18}%`,
+      `科技升至 Lv.${this.playerTechLevel}！全军伤害 +${(this.playerTechLevel - 1) * 18}%`,
       'good'
     );
     this.pushHudState();
@@ -1042,7 +1069,7 @@ export class BattleScene extends Phaser.Scene {
     this.paratrooperTargeting = true;
     sound.playClick();
     this.drawParatrooperTargetOverlay();
-    this.configData?.onToast('🪂 点击地图任意位置空投伞兵！（再次点击按钮自动奇袭敌后）', 'good');
+    this.configData?.onToast('请点击地图任意陆地空投伞兵！（再点一次自动奇袭敌后金矿）', 'good');
     this.pushHudState();
   }
 
@@ -1095,11 +1122,11 @@ export class BattleScene extends Phaser.Scene {
     });
 
     if (team === 'player') {
-      this.spawnFloatingText(dropX, dropY - 34, '🪂 空降奇袭!', '#69f0ae', 16);
+      this.spawnFloatingText(dropX, dropY - 34, '空降奇袭!', '#69f0ae', 16);
       this.cameras.main.pan(dropX, dropY, 280, 'Sine.easeOut', false);
     } else {
-      this.spawnFloatingText(dropX, dropY - 34, '⚠️ 敌军伞兵空投!', '#ff5252', 16);
-      this.configData?.onToast('⚠️ 警告：敌军召唤伞兵空投！可用机枪碉堡克制！', 'warn');
+      this.spawnFloatingText(dropX, dropY - 34, '敌军伞兵空投!', '#ff5252', 16);
+      this.configData?.onToast('警报：敌军召唤伞兵空投！可用机枪碉堡克制！', 'warn');
     }
   }
 
@@ -1117,7 +1144,7 @@ export class BattleScene extends Phaser.Scene {
     if (cmdId === 'boris') {
       // Kirov / MiG Carpet Bombing Strike on densest enemy cluster!
       const targetPos = this.findDensestCluster('enemy');
-      this.configData?.onToast('💣 鲍里斯元帅：基洛夫高爆轰炸启动！', 'good');
+      this.configData?.onToast('鲍里斯元帅：基洛夫高爆轰炸启动！', 'good');
       for (let i = 0; i < 5; i++) {
         this.time.delayedCall(i * 170, () => {
           if (this.matchEnded) return;
@@ -1130,7 +1157,7 @@ export class BattleScene extends Phaser.Scene {
       }
     } else if (cmdId === 'natasha') {
       // Red Alert Iron Curtain Shield + Repair!
-      this.configData?.onToast('🛡️ 铁壁·娜塔莎：铁幕护盾已覆盖全军！', 'good');
+      this.configData?.onToast('铁壁·娜塔莎：铁幕护盾已覆盖全军！', 'good');
       for (const u of this.units.values()) {
         if (u.team === 'player') {
           u.buffShieldUntil = this.elapsedSec + 6.5;
@@ -1145,7 +1172,7 @@ export class BattleScene extends Phaser.Scene {
       }
     } else {
       // General Mac: Combat Stimulants Frenzy (+42% Attack Speed & +35% Move Speed!)
-      this.configData?.onToast('⚡ 麦克将军：全军狂暴集结火力全开！', 'good');
+      this.configData?.onToast('麦克将军：全军狂暴集结火力全开！', 'good');
       for (const u of this.units.values()) {
         if (u.team === 'player') {
           u.buffFrenzyUntil = this.elapsedSec + 8.0;
@@ -1213,46 +1240,44 @@ export class BattleScene extends Phaser.Scene {
 
     const suffix = team === 'player' ? 'blue' : 'red';
     const container = this.add.container(x, y);
-    const isHumanoid =
-      cardId === 'heavy_gunner' || cardId === 'assault_infantry' || cardId === 'jetpack_trooper';
-    const hasSeparateTurret = cardId === 'rhino_tank' || cardId === 'apocalypse_tank';
-    const unitScale = TEX_SCALE * (card.id === 'apocalypse_tank' ? 0.94 : 0.84);
+    const dispSize =
+      card.id === 'apocalypse_tank'
+        ? 58
+        : card.id === 'rhino_tank' || card.id === 'jet_fighter' || card.id === 'artillery_car'
+          ? 52
+          : card.id === 'missile_car'
+            ? 48
+            : 43;
 
     let shadow: Phaser.GameObjects.Image | undefined;
     if (card.isFlying) {
       shadow = this.add
-        .image(7, 16, `unit_${cardId}_${suffix}`)
+        .image(8, 22, `unit_${cardId}_${suffix}`)
         .setTint(0x000000)
         .setAlpha(0.28)
-        .setScale(unitScale * 0.9);
+        .setDisplaySize(dispSize * 0.88, dispSize * 0.88);
       container.add(shadow);
     }
 
     const initialAngle = team === 'player' ? -Math.PI / 2 : Math.PI / 2;
+    const facesLeftNatively =
+      cardId === 'missile_car' || cardId === 'artillery_car' || cardId === 'jet_fighter';
     const sprite = this.add
       .image(0, 0, `unit_${cardId}_${suffix}`)
-      .setRotation(isHumanoid ? 0 : initialAngle)
-      .setScale(unitScale);
+      .setDisplaySize(dispSize, dispSize)
+      .setFlipX(team === 'player' ? !facesLeftNatively : facesLeftNatively);
 
     const auraRing = this.add.graphics();
     const hpBar = this.add.graphics();
-    container.add([auraRing, sprite]);
+    container.add([auraRing, sprite, hpBar]);
 
     let turretSprite: Phaser.GameObjects.Image | undefined;
-    if (hasSeparateTurret) {
-      turretSprite = this.add
-        .image(0, 0, `turret_${cardId}_${suffix}`)
-        .setRotation(initialAngle)
-        .setScale(unitScale);
-      container.add(turretSprite);
-    }
-
-    container.add(hpBar);
+    void turretSprite;
 
     let parachute: Phaser.GameObjects.Image | undefined;
     if (viaParachute) {
-      parachute = this.add.image(0, -52, 'parachute_canopy').setScale(TEX_SCALE * 0.96);
-      sprite.y = -34;
+      parachute = this.add.image(0, -48, 'ui_parachute_icon').setDisplaySize(38, 38);
+      sprite.y = -32;
       container.add(parachute);
     }
 
@@ -1411,7 +1436,7 @@ export class BattleScene extends Phaser.Scene {
 
   private spawnCoopBossWave(waveNum: number): void {
     sound.playSkill();
-    this.configData?.onToast(`🚨 合作波次 ${waveNum}/${this.coopMaxWave}：红警精锐突击群来袭！`, 'warn');
+    this.configData?.onToast(`合作波次 ${waveNum}/${this.coopMaxWave}：红警精锐突击群来袭！`, 'warn');
     const waveTemplates: string[][] = [
       ['assault_infantry', 'assault_infantry', 'missile_car'],
       ['rhino_tank', 'heavy_gunner', 'heavy_gunner', 'missile_car'],
@@ -1589,55 +1614,44 @@ export class BattleScene extends Phaser.Scene {
       const distToTarget = Math.hypot(tx - u.x, ty - u.y);
       const effectiveRange = targetBldg ? u.range + 18 : u.range;
 
-      const isHumanoid =
-        u.cardId === 'heavy_gunner' || u.cardId === 'assault_infantry' || u.cardId === 'jetpack_trooper';
+      const facesLeftNatively =
+        u.cardId === 'missile_car' || u.cardId === 'artillery_car' || u.cardId === 'jet_fighter';
 
-      // 2. Attack if within range, otherwise advance & spread cleanly into battle formation!
+      // 2. Attack if within range, otherwise advance & spread cleanly into isometric 3D battle line!
       const atkSpeedMult = (1 + (techLevel - 1) * 0.06) * (inFrenzy ? 1.42 : 1.0);
       u.attackTimer -= dt * atkSpeedMult;
 
       if ((targetUnit || targetBldg) && distToTarget <= effectiveRange) {
         const aimAngle = Math.atan2(ty - u.y, tx - u.x);
-        if (isHumanoid) {
-          u.sprite.setRotation(0);
-          u.sprite.setFlipX(Math.cos(aimAngle) < -0.15);
-          if (u.shadow) u.shadow.setRotation(0);
-        } else if (u.turretSprite) {
-          u.turretSprite.setRotation(aimAngle);
-        } else {
-          u.angle = aimAngle;
-          u.sprite.setRotation(u.angle);
-          if (u.shadow) u.shadow.setRotation(u.angle);
+        const aimDx = Math.cos(aimAngle);
+        if (Math.abs(aimDx) > 0.12) {
+          const shouldFlip = facesLeftNatively ? aimDx > 0 : aimDx < 0;
+          u.sprite.setFlipX(shouldFlip);
+          if (u.shadow) u.shadow.setFlipX(shouldFlip);
         }
+        u.sprite.setRotation(Phaser.Math.Clamp(aimDx * 0.1, -0.1, 0.1));
 
         if (u.attackTimer <= 0) {
           u.attackTimer = u.attackInterval;
           const dmg = u.atk * (1 + (techLevel - 1) * 0.18);
+          const muzzleX = u.x + Math.cos(aimAngle) * 16;
+          const muzzleY = u.y + Math.sin(aimAngle) * 14 - 4;
           this.fireAttack(
             u.team,
             u.cardId,
             u.projectileType,
-            u.x + Math.cos(aimAngle) * 14,
-            u.y + Math.sin(aimAngle) * 14,
+            muzzleX,
+            muzzleY,
             targetUnit,
             targetBldg,
             dmg,
             u.splashRadius
           );
-          if (u.turretSprite) {
-            u.turretSprite.x = -Math.cos(aimAngle) * 2.5;
-            u.turretSprite.y = -Math.sin(aimAngle) * 2.5;
-          } else {
-            u.sprite.x = -Math.cos(aimAngle) * 2.2;
-            u.sprite.y = -Math.sin(aimAngle) * 2.2;
-          }
+          u.sprite.x = -Math.cos(aimAngle) * 3.2;
+          u.sprite.y = -Math.sin(aimAngle) * 2.6;
         } else {
           u.sprite.x *= 0.8;
           u.sprite.y *= 0.8;
-          if (u.turretSprite) {
-            u.turretSprite.x *= 0.8;
-            u.turretSprite.y *= 0.8;
-          }
         }
       } else {
         // Advance toward target with smooth friendly unit separation (forms Red Alert tank battle line!)
@@ -1649,7 +1663,7 @@ export class BattleScene extends Phaser.Scene {
 
         let sepX = 0;
         let sepY = 0;
-        const desiredSpace = u.isFlying ? 24 : u.category === 'tank' ? 30 : 21;
+        const desiredSpace = u.isFlying ? 26 : u.category === 'tank' ? 34 : 23;
 
         for (const other of unitArray) {
           if (other.id === u.id || other.isFlying !== u.isFlying || other.dropProgress < 1) continue;
@@ -1686,22 +1700,22 @@ export class BattleScene extends Phaser.Scene {
         }
 
         u.angle = Phaser.Math.Angle.RotateTo(u.angle, Math.atan2(moveY, moveX), dt * 7);
-        if (isHumanoid) {
-          u.sprite.setRotation(0);
-          u.sprite.setFlipX(moveX < -0.15);
-          u.sprite.x = 0;
-          u.sprite.y = Math.sin(this.elapsedSec * 14 + u.x * 0.1) * 1.6;
-          if (u.shadow) u.shadow.setRotation(0);
-        } else {
-          u.sprite.setRotation(u.angle);
-          u.sprite.x *= 0.8;
-          u.sprite.y *= 0.8;
-          if (u.turretSprite) {
-            u.turretSprite.setRotation(u.angle);
-            u.turretSprite.x *= 0.8;
-            u.turretSprite.y *= 0.8;
-          }
-          if (u.shadow) u.shadow.setRotation(u.angle);
+        if (Math.abs(moveX) > 0.14) {
+          const shouldFlip = facesLeftNatively ? moveX > 0 : moveX < 0;
+          u.sprite.setFlipX(shouldFlip);
+          if (u.shadow) u.shadow.setFlipX(shouldFlip);
+        }
+        const bank = u.isFlying
+          ? Phaser.Math.Clamp(moveX * 0.22, -0.22, 0.22)
+          : Phaser.Math.Clamp(moveX * 0.08, -0.08, 0.08);
+        u.sprite.setRotation(bank);
+        u.sprite.x *= 0.8;
+        u.sprite.y =
+          u.category === 'infantry' || u.isFlying
+            ? Math.sin(this.elapsedSec * 12 + u.x * 0.1) * 1.8
+            : u.sprite.y * 0.8;
+        if (u.shadow) {
+          u.shadow.setRotation(bank);
         }
 
         u.container.setPosition(u.x, u.y);
@@ -1822,6 +1836,20 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
+    // Additive WebGL Muzzle Flash at gun barrel / missile pod!
+    const muzzle = this.add
+      .image(sx, sy, 'fx_muzzle')
+      .setDisplaySize(projectileType === 'cannon' || projectileType === 'artillery' ? 28 : 20, projectileType === 'cannon' || projectileType === 'artillery' ? 28 : 20)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.projectileLayer.add(muzzle);
+    this.tweens.add({
+      targets: muzzle,
+      alpha: 0,
+      scale: 0.25,
+      duration: 110,
+      onComplete: () => muzzle.destroy(),
+    });
+
     const texKey =
       projectileType === 'missile'
         ? 'proj_missile'
@@ -1831,15 +1859,15 @@ export class BattleScene extends Phaser.Scene {
 
     const speed =
       projectileType === 'bullet' || projectileType === 'heavy_mg'
-        ? 520
+        ? 540
         : projectileType === 'missile'
-          ? 360
-          : 320;
+          ? 375
+          : 330;
 
     const projSprite = this.add
       .image(sx, sy, texKey)
       .setRotation(Math.atan2(ty - sy, tx - sx))
-      .setScale(projectileType === 'artillery' || projectileType === 'bomb' ? 0.95 : 0.72);
+      .setScale(projectileType === 'artillery' || projectileType === 'bomb' ? 0.72 : 0.56);
     this.projectileLayer.add(projSprite);
 
     this.projectiles.push({
@@ -1910,6 +1938,17 @@ export class BattleScene extends Phaser.Scene {
         p.y += (dy / dist) * step;
         p.sprite.setPosition(p.x, p.y);
         p.sprite.setRotation(Math.atan2(dy, dx));
+        if (p.type === 'missile' && Math.random() < 0.55) {
+          const puff = this.add.image(p.x, p.y, 'fx_puff').setDisplaySize(9, 9).setAlpha(0.58);
+          this.projectileLayer.add(puff);
+          this.tweens.add({
+            targets: puff,
+            alpha: 0,
+            scale: 0.45,
+            duration: 260,
+            onComplete: () => puff.destroy(),
+          });
+        }
       }
     }
 
@@ -2020,7 +2059,7 @@ export class BattleScene extends Phaser.Scene {
         cell.buildingId = null;
         cell.rubbleUntil = this.elapsedSec + 14;
         cell.rubbleSprite?.destroy();
-        cell.rubbleSprite = this.add.image(cell.x, cell.y + 2, 'rubble_pile').setScale(TEX_SCALE * 0.96);
+        cell.rubbleSprite = this.add.image(cell.x, cell.y + 2, 'rubble_pile').setDisplaySize(56, 56);
         this.terrainLayer.add(cell.rubbleSprite);
         this.paintHexOwner(cell, target.team === 'player' ? 'enemy' : 'player');
       }
@@ -2067,21 +2106,20 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawnExplosionVisual(x: number, y: number, radius: number, shakeCam: boolean): void {
-    const ring = this.add.graphics().setDepth(26);
-    ring.fillStyle(0xff6d00, 0.85);
-    ring.fillCircle(0, 0, radius * 0.55);
-    ring.fillStyle(0xffff00, 0.9);
-    ring.fillCircle(0, 0, radius * 0.3);
-    ring.setPosition(x, y);
+    const fb = this.add
+      .image(x, y, 'fx_fireball')
+      .setDisplaySize(radius * 1.6, radius * 1.6)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(26);
 
     this.tweens.add({
-      targets: ring,
-      scaleX: 1.85,
-      scaleY: 1.85,
+      targets: fb,
+      scaleX: fb.scaleX * 1.75,
+      scaleY: fb.scaleY * 1.75,
       alpha: 0,
-      duration: 280,
+      duration: 300,
       ease: 'Quad.easeOut',
-      onComplete: () => ring.destroy(),
+      onComplete: () => fb.destroy(),
     });
 
     this.spawnBurstParticles(x, y, 0xff9100, shakeCam ? 12 : 6);
@@ -2196,19 +2234,20 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private renderMinimap(): void {
+    const dpr = this.getDpr();
     const g = this.minimapGraphics;
     g.clear();
     const vw = this.scale.width;
     const vh = this.scale.height;
-    const mapW = 44;
-    const mapH = 132;
-    const mx = vw - mapW - 8;
-    const my = Math.max(108, vh * 0.5 - mapH * 0.5);
+    const mapW = 44 * dpr;
+    const mapH = 132 * dpr;
+    const mx = vw - mapW - 8 * dpr;
+    const my = Math.max(108 * dpr, vh * 0.5 - mapH * 0.5);
 
     g.fillStyle(0x0b1622, 0.78);
-    g.lineStyle(1.5, 0x64b5f6, 0.75);
-    g.fillRoundedRect(mx, my, mapW, mapH, 6);
-    g.strokeRoundedRect(mx, my, mapW, mapH, 6);
+    g.lineStyle(1.5 * dpr, 0x64b5f6, 0.75);
+    g.fillRoundedRect(mx, my, mapW, mapH, 6 * dpr);
+    g.strokeRoundedRect(mx, my, mapW, mapH, 6 * dpr);
 
     const sx = mapW / WORLD_WIDTH;
     const sy = mapH / WORLD_HEIGHT;
@@ -2216,25 +2255,24 @@ export class BattleScene extends Phaser.Scene {
     for (const c of this.cells.values()) {
       if (c.isWater) continue;
       g.fillStyle(c.owner === 'player' ? 0x7cb342 : 0xdca85e, 0.65);
-      g.fillRect(mx + c.x * sx - 1.5, my + c.y * sy - 1.5, 3, 3);
+      g.fillRect(mx + c.x * sx - 1.5 * dpr, my + c.y * sy - 1.5 * dpr, 3 * dpr, 3 * dpr);
     }
 
     for (const b of this.buildings.values()) {
       g.fillStyle(b.team === 'player' ? 0x29b6f6 : 0xff5252, 1);
-      g.fillCircle(mx + b.x * sx, my + b.y * sy, b.isCommandCenter ? 3.2 : 2.1);
+      g.fillCircle(mx + b.x * sx, my + b.y * sy, (b.isCommandCenter ? 3.2 : 2.1) * dpr);
     }
 
     for (const u of this.units.values()) {
       g.fillStyle(u.team === 'player' ? 0xe1f5fe : 0xffab91, 0.95);
-      g.fillRect(mx + u.x * sx - 1, my + u.y * sy - 1, 2, 2);
+      g.fillRect(mx + u.x * sx - 1 * dpr, my + u.y * sy - 1 * dpr, 2 * dpr, 2 * dpr);
     }
 
-    // Current viewport indicator box
     const cam = this.cameras.main;
-    const viewY = Phaser.Math.Clamp(cam.worldView.y * sy, 0, mapH - 16);
-    const viewH = Phaser.Math.Clamp(cam.worldView.height * sy, 14, mapH);
-    g.lineStyle(1.4, 0xffffff, 0.9);
-    g.strokeRect(mx + 2, my + viewY, mapW - 4, Math.min(viewH, mapH - viewY));
+    const viewY = Phaser.Math.Clamp(cam.worldView.y * sy, 0, mapH - 16 * dpr);
+    const viewH = Phaser.Math.Clamp(cam.worldView.height * sy, 14 * dpr, mapH);
+    g.lineStyle(1.4 * dpr, 0xffffff, 0.9);
+    g.strokeRect(mx + 2 * dpr, my + viewY, mapW - 4 * dpr, Math.min(viewH, mapH - viewY));
   }
 
   private pushHudState(): void {

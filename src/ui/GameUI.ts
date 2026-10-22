@@ -1,7 +1,7 @@
 import {
   ALL_CARD_IDS,
   CARDS,
-  CATEGORY_ICON,
+  CATEGORY_BADGE_SVG,
   COMMANDERS,
   MATCH_TIPS,
   OPPONENT_PROFILES,
@@ -10,16 +10,25 @@ import {
 } from '../data/cards';
 import { store } from '../data/storage';
 import { sound } from '../audio/SoundManager';
-import { renderAvatarDataURL, renderCardIllustrationDataURL } from '../art/RedAlertArt';
+import {
+  getStudioAsset,
+  renderAvatarDataURL,
+  renderCardIllustrationDataURL,
+} from '../art/RedAlertArt';
 import type { BattleEndSummary, LiveBattleHUDState } from '../game/BattleTypes';
-import type { BattleScene } from '../game/scenes/BattleScene';
+import type { BattleScene, StartMatchConfig } from '../game/scenes/BattleScene';
 
 type ScreenView = 'lobby' | 'matchmaking' | 'battle';
 type LobbyTab = 'shop' | 'troops' | 'battle' | 'commander' | 'guide';
 
+const ico = (key: string, size = 18, extraStyle = '') =>
+  `<img src="${getStudioAsset(key)}" alt="" style="width:${size}px;height:${size}px;object-fit:contain;vertical-align:middle;flex-shrink:0;${extraStyle}" />`;
+
 export class GameUI {
   private root: HTMLElement;
   private getBattleScene: () => BattleScene | null;
+  private launchEngineBattle: (cfg: StartMatchConfig) => void;
+  private returnToEngineHome: () => void;
 
   private view: ScreenView = 'lobby';
   private activeTab: LobbyTab = 'battle';
@@ -29,12 +38,18 @@ export class GameUI {
   private matchTimerHandle: number | null = null;
   private toastTimeout: number | null = null;
   private tooltipTimeout: number | null = null;
-  private dioramaRaf: number | null = null;
   private lastHud: LiveBattleHUDState | null = null;
 
-  constructor(root: HTMLElement, getBattleScene: () => BattleScene | null) {
+  constructor(
+    root: HTMLElement,
+    getBattleScene: () => BattleScene | null,
+    launchEngineBattle: (cfg: StartMatchConfig) => void,
+    returnToEngineHome: () => void
+  ) {
     this.root = root;
     this.getBattleScene = getBattleScene;
+    this.launchEngineBattle = launchEngineBattle;
+    this.returnToEngineHome = returnToEngineHome;
     sound.enabled = store.data.soundEnabled;
     this.render();
   }
@@ -68,20 +83,18 @@ export class GameUI {
         <div class="cost-orb">${card.cost}</div>
         ${
           showSlotBadge
-            ? `<div style="position:absolute;top:2px;right:3px;font-size:9px;background:rgba(0,0,0,0.65);padding:1px 4px;border-radius:4px;font-weight:800;">${showSlotBadge}</div>`
+            ? `<div class="slot-role-tag">${showSlotBadge}</div>`
             : ''
         }
         <img class="card-art-img" src="${imgUrl}" alt="${card.name}" />
-        <div style="font-size:11.5px;font-weight:900;color:#fff;text-shadow:0 1px 3px #000;margin-bottom:1px;">
-          ${card.shortName}
-        </div>
+        <div class="card-short-title">${card.shortName}</div>
         <div class="card-name-row">
           <span>${lv}级</span>
-          <span>${CATEGORY_ICON[card.category]}</span>
+          <span class="cat-svg-badge">${CATEGORY_BADGE_SVG[card.category]}</span>
         </div>
         <div class="shard-bar">
           <div class="shard-fill ${canUp ? 'upgradable' : ''}" style="width:${fillPct}%"></div>
-          <span>${canUp ? '⬆ ' : ''}${shards}/${needed}</span>
+          <span>${canUp ? '▲ ' : ''}${shards}/${needed}</span>
         </div>
       </div>
     `;
@@ -102,41 +115,52 @@ export class GameUI {
   // =========================================================================
   private renderLobby(): void {
     const powerPct = store.getCombatPowerPct();
-    const soundIcon = store.data.soundEnabled ? '🔊' : '🔇';
+    const isHomeDiorama = this.activeTab === 'battle';
+    const soundSvg = store.data.soundEnabled
+      ? `<svg viewBox="0 0 24 24" width="15" height="15" fill="#80d8ff"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="15" height="15" fill="#90a4ae"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`;
+
+    const shareSvg = `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffe082"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>`;
 
     this.root.innerHTML = `
-      <div class="lobby-screen">
-        <div class="top-resource-bar">
-          <div class="res-pill" title="升级任意卡牌均可永久提升全军战力加成">✊ <span>${powerPct}%</span></div>
-          <div class="res-pill">💎 <span>${store.data.diamonds}</span></div>
-          <div class="res-pill">🪙 <span>${store.data.gold}</span></div>
-          <button class="sound-btn" id="btn-share-url" title="查看手机部署网址">🌐</button>
-          <button class="sound-btn" id="btn-toggle-sound" title="音效开关">${soundIcon}</button>
+      <div class="lobby-screen ${isHomeDiorama ? 'battle-home-active' : 'solid-tab'}">
+        <div class="top-resource-bar ui-clickable">
+          <div class="res-pill" title="升级任意卡牌均可永久提升全军战力加成">
+            ${ico('ui_power', 21)} <span>${powerPct}%</span>
+          </div>
+          <div class="res-pill">
+            ${ico('ui_gem', 21)} <span>${store.data.diamonds}</span>
+          </div>
+          <div class="res-pill">
+            ${ico('ui_coin', 21)} <span>${store.data.gold}</span>
+          </div>
+          <button class="sound-btn" id="btn-share-url" title="查看手机部署网址">${shareSvg}</button>
+          <button class="sound-btn" id="btn-toggle-sound" title="音效开关">${soundSvg}</button>
         </div>
 
-        <div class="lobby-body" id="lobby-tab-content">
+        <div class="lobby-body ${isHomeDiorama ? 'home-passthrough' : 'ui-clickable'}" id="lobby-tab-content">
           ${this.renderActiveLobbyTabHTML()}
         </div>
 
-        <div class="bottom-nav">
+        <div class="bottom-nav ui-clickable">
           <button class="nav-tab ${this.activeTab === 'shop' ? 'active' : ''}" data-tab="shop">
-            <span class="nav-ico">📦</span>
+            <img class="nav-3d-img" src="${getStudioAsset('nav_shop')}" alt="商店" />
             <span>商店</span>
           </button>
           <button class="nav-tab ${this.activeTab === 'troops' ? 'active' : ''}" data-tab="troops">
-            <span class="nav-ico">🚜</span>
+            <img class="nav-3d-img" src="${getStudioAsset('nav_troops')}" alt="部队" />
             <span>部队</span>
           </button>
           <button class="nav-tab ${this.activeTab === 'battle' ? 'active' : ''}" data-tab="battle">
-            <span class="nav-ico">📡</span>
+            <img class="nav-3d-img" src="${getStudioAsset('nav_battle')}" alt="对战" />
             <span>对战</span>
           </button>
           <button class="nav-tab ${this.activeTab === 'commander' ? 'active' : ''}" data-tab="commander">
-            <span class="nav-ico">🎖️</span>
+            <img class="nav-3d-img" src="${getStudioAsset('nav_cmd')}" alt="指挥官" />
             <span>指挥官</span>
           </button>
           <button class="nav-tab ${this.activeTab === 'guide' ? 'active' : ''}" data-tab="guide">
-            <span class="nav-ico">⚔️</span>
+            <img class="nav-3d-img" src="${getStudioAsset('nav_guide')}" alt="克制" />
             <span>克制</span>
           </button>
         </div>
@@ -144,9 +168,6 @@ export class GameUI {
     `;
 
     this.bindLobbyEvents();
-    if (this.activeTab === 'battle') {
-      this.drawSnowyWatchtowerDiorama();
-    }
   }
 
   private renderActiveLobbyTabHTML(): string {
@@ -160,7 +181,7 @@ export class GameUI {
       const deck = store.getActiveDeck();
 
       return `
-        <div class="profile-pass-row">
+        <div class="profile-pass-row ui-clickable">
           <div class="profile-card">
             <div class="avatar-frame">
               <img src="${renderAvatarDataURL('player')}" alt="指挥官头像" />
@@ -168,12 +189,12 @@ export class GameUI {
             <div class="profile-meta">
               <h3>${store.data.playerName}</h3>
               <p>胜率: ${store.getWinRatePct()}%</p>
-              <p style="color:#81d4fa;font-size:11px;">当前阵容: ${deck.name}</p>
+              <p style="color:#b3e5fc;font-size:11px;font-weight:700;">阵容: ${deck.name}</p>
             </div>
           </div>
 
           <div class="pass-banner" id="btn-claim-pass">
-            <div class="pass-title">对战通行证 🎁</div>
+            <div class="pass-title">对战通行证</div>
             <div class="pass-bar-wrap">
               <div class="pass-lv-badge">${store.data.battlePassLv}</div>
               <div class="pass-progress">
@@ -184,23 +205,40 @@ export class GameUI {
           </div>
         </div>
 
+        <!-- Center viewport lets live 60 FPS Phaser 3 WebGL HomeScene 3D Snowy Island shine directly through! -->
         <div class="diorama-stage">
-          <div class="side-events-col left">
-            <button class="mini-event-btn" data-quick-tab="commander"><span class="ev-icon">🌟</span>指挥官</button>
-            <button class="mini-event-btn" data-quick-tab="troops"><span class="ev-icon">🃏</span>配卡组</button>
-            <button class="mini-event-btn" id="btn-free-bonus"><span class="ev-icon">🏆</span>每日首胜</button>
+          <div class="side-events-col left ui-clickable">
+            <button class="mini-event-btn" data-quick-tab="commander">
+              ${ico('nav_cmd', 32)}
+              <span>指挥官特权</span>
+            </button>
+            <button class="mini-event-btn" data-quick-tab="troops">
+              ${ico('card_apocalypse_tank', 32)}
+              <span>编成卡组</span>
+            </button>
+            <button class="mini-event-btn" id="btn-free-bonus">
+              ${ico('ui_trophy', 32)}
+              <span>每日首胜</span>
+            </button>
           </div>
 
-          <canvas class="diorama-canvas" id="diorama-canvas" width="580" height="410"></canvas>
-
-          <div class="side-events-col right">
-            <button class="mini-event-btn" data-quick-tab="guide"><span class="ev-icon">📖</span>克制表</button>
-            <button class="mini-event-btn" data-quick-tab="shop"><span class="ev-icon">💎</span>抽卡包</button>
-            <button class="mini-event-btn" id="btn-switch-opp"><span class="ev-icon">🎯</span>换对手</button>
+          <div class="side-events-col right ui-clickable">
+            <button class="mini-event-btn" data-quick-tab="shop">
+              ${ico('chest_gold', 32)}
+              <span>军备福利</span>
+            </button>
+            <button class="mini-event-btn" data-quick-tab="guide">
+              ${ico('card_missile_car', 32)}
+              <span>克制图鉴</span>
+            </button>
+            <button class="mini-event-btn" id="btn-switch-opp">
+              ${ico('avatar_sam', 30, 'border-radius:6px;')}
+              <span>切换对手</span>
+            </button>
           </div>
 
-          <div class="rank-trophy-pill">
-            <div class="rank-title-text">🏆 ${rank.name}</div>
+          <div class="rank-trophy-pill ui-clickable">
+            <div class="rank-title-text">${ico('ui_trophy', 20)} <span>${rank.name}</span></div>
             <div class="rank-bar-bg">
               <div class="rank-bar-fill" style="width:${rankPct}%"></div>
               <span>${store.data.trophies}/${rank.next}</span>
@@ -208,51 +246,53 @@ export class GameUI {
           </div>
         </div>
 
-        <div class="daily-quest-box" id="btn-daily-quest">
+        <div class="daily-quest-box ui-clickable" id="btn-daily-quest">
           <div class="dq-left">
-            <span style="font-size:22px;">🃏</span>
+            ${ico('chest_bronze', 34)}
             <div>
-              <div>每日商店免费补给 1 次</div>
+              <div>每日商店购物1次</div>
               <div style="font-size:11px;color:${store.data.dailyShopClaimed ? '#69f0ae' : '#ffca28'};">
-                ${store.data.dailyShopClaimed ? '今日已完成 ✔' : '( 0 / 1 ) 点击前往商店免费领取！'}
+                ${store.data.dailyShopClaimed ? '今日已完成' : '( 0 / 1 ) 点击免费领取军备空投'}
               </div>
             </div>
           </div>
-          <span style="font-size:12px;font-weight:800;color:#80d8ff;">前往 ➔</span>
+          <span style="font-size:12px;font-weight:800;color:#80d8ff;">前往 &gt;</span>
         </div>
 
-        <div class="battle-cta-row">
+        <div class="battle-cta-row ui-clickable">
           <button class="btn-pvp" id="btn-start-pvp">
             <span>对战模式</span>
-            <span class="sub">开格子 · 抢金矿 · 推平敌基地</span>
+            <span class="sub">翻地块 · 抢金矿 · 推平敌基地</span>
           </button>
           <button class="btn-coop" id="btn-start-coop">
             <span>合作模式</span>
-            <span class="sub">双基地联防 · 迎战基洛夫大军</span>
+            <span class="sub">双基地联防 · 迎战重装军团</span>
           </button>
         </div>
 
-        <div class="chest-slots-row">
+        <div class="chest-slots-row ui-clickable">
           ${store.data.chests
             .map((ch, idx) => {
               if (!ch) {
                 return `<div class="chest-slot empty" data-chest-idx="${idx}">空槽位</div>`;
               }
-              const ico = ch.tier === 'gold' ? '👑' : ch.tier === 'silver' ? '🧰' : '📦';
+              const chestKey = ch.tier === 'gold' ? 'chest_gold' : 'chest_bronze';
               return `
                 <div class="chest-slot ${ch.tier === 'gold' ? 'gold-tier' : ''}" data-chest-idx="${idx}">
                   <div class="chest-name">${ch.title}</div>
-                  <div class="chest-icon">${ico}</div>
-                  <div class="chest-timer">${ch.skipGems > 0 ? `💎${ch.skipGems} 秒开` : '点击开启'}</div>
+                  <img class="chest-3d-img" src="${getStudioAsset(chestKey)}" alt="${ch.title}" />
+                  <div class="chest-timer">
+                    ${ch.skipGems > 0 ? `${ico('ui_gem', 12)} ${ch.skipGems} 开启` : '点击开启'}
+                  </div>
                 </div>
               `;
             })
             .join('')}
         </div>
 
-        <div id="btn-chat-coop" style="margin-top:2px;padding:6px 10px;border-radius:8px;background:rgba(13,20,38,0.72);font-size:11.5px;color:#cfd8dc;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
-          <span>💬 <b>苍白哥哥呢:</b> <span style="color:#80d8ff;">[!coop:20144806] 来合作模式一起守红警BOSS！</span></span>
-          <span style="color:#ffd54f;font-weight:800;">加入 ➔</span>
+        <div class="ui-clickable" id="btn-chat-coop" style="margin-top:2px;padding:6px 10px;border-radius:8px;background:rgba(13,20,38,0.8);border:1px solid rgba(129,212,250,0.22);font-size:11.5px;color:#cfd8dc;display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+          <span><b>苍白哥哥呢:</b> <span style="color:#80d8ff;">[!coop:20144806] 来合作模式一起守红警军团！</span></span>
+          <span style="color:#ffd54f;font-weight:800;">加入 &gt;</span>
         </div>
       `;
     }
@@ -273,7 +313,7 @@ export class GameUI {
             <span style="font-size:13.5px;font-weight:900;color:#ffe082;">
               出战卡组 ${store.data.activeDeckIndex + 1}：${deck.name}
             </span>
-            <span style="font-size:11px;color:#b0bec5;">点任意卡牌升级或替换</span>
+            <span style="font-size:11px;color:#cfd8dc;">点击卡牌可升级或替换</span>
           </div>
 
           <div class="equipped-deck-grid">
@@ -297,7 +337,7 @@ export class GameUI {
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 2px;">
-          <span style="font-size:13px;font-weight:800;">已获得红警部队: ${ALL_CARD_IDS.length}/${ALL_CARD_IDS.length}</span>
+          <span style="font-size:13px;font-weight:800;">已获得: ${ALL_CARD_IDS.length}/${ALL_CARD_IDS.length}</span>
           <div style="display:flex;gap:6px;">
             <button class="action-btn ${this.sortBy === 'rarity' ? 'gold' : 'secondary'}" id="btn-sort-rarity" style="padding:4px 10px;font-size:11.5px;">品质</button>
             <button class="action-btn ${this.sortBy === 'level' ? 'gold' : 'secondary'}" id="btn-sort-level" style="padding:4px 10px;font-size:11.5px;">等级</button>
@@ -313,20 +353,22 @@ export class GameUI {
     if (this.activeTab === 'commander') {
       return `
         <div class="deck-panel-box">
-          <h3 style="font-size:16px;color:#ffe082;margin-bottom:4px;">🎖️ 红警指挥官与空投伞兵战术</h3>
-          <p style="font-size:12px;color:#cfd8dc;">选择出战指挥官，可在战斗右下角释放专属逆转大招，并获得全军被动增益！</p>
+          <h3 style="font-size:16px;color:#ffe082;margin-bottom:4px;">红警统帅指挥部与战术大招</h3>
+          <p style="font-size:12px;color:#cfd8dc;">选择出战指挥官，可在战斗右下角释放专属主动大招，并获得全军被动增益。</p>
         </div>
         ${COMMANDERS.map((cmd) => {
           const selected = store.data.selectedCommanderId === cmd.id;
+          const portrait = renderAvatarDataURL(`cmd_${cmd.id}`);
           return `
             <div class="deck-panel-box" style="border-color:${selected ? '#ffe082' : 'rgba(255,255,255,0.2)'};">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                <img src="${portrait}" alt="${cmd.name}" style="width:58px;height:58px;border-radius:10px;border:2px solid ${cmd.themeColor};object-fit:cover;flex-shrink:0;" />
+                <div style="flex:1;">
                   <span style="background:${cmd.themeColor};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:900;">${cmd.title}</span>
-                  <h3 style="font-size:17px;margin-top:5px;">${cmd.name} ${'⭐'.repeat(cmd.stars)}</h3>
+                  <h3 style="font-size:16.5px;margin-top:5px;">${cmd.name} · ${cmd.stars}星统帅</h3>
                 </div>
                 <button class="action-btn ${selected ? 'green' : 'gold'}" data-select-cmd="${cmd.id}">
-                  ${selected ? '✔ 出战中' : '设为统帅'}
+                  ${selected ? '出战中' : '设为统帅'}
                 </button>
               </div>
               <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(0,0,0,0.3);font-size:12px;line-height:1.5;">
@@ -343,13 +385,14 @@ export class GameUI {
     if (this.activeTab === 'shop') {
       return `
         <div class="deck-panel-box" style="text-align:center;">
-          <h3 style="font-size:17px;color:#ffe082;">📦 军团军火补给站</h3>
+          <h3 style="font-size:17px;color:#ffe082;">军团军火补给站</h3>
           <p style="font-size:12px;color:#cfd8dc;margin-top:4px;">抽取红警部队碎片升级兵种等级，永久提升全军战力百分比！</p>
         </div>
 
-        <div class="deck-panel-box" style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <h4 style="font-size:15px;color:#69f0ae;">🎁 每日免费军备空投</h4>
+        <div class="deck-panel-box" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          ${ico('chest_bronze', 54)}
+          <div style="flex:1;">
+            <h4 style="font-size:15px;color:#69f0ae;">每日免费军备空投箱</h4>
             <p style="font-size:12px;color:#cfd8dc;margin-top:2px;">立得 金币 +600、钻石 +40 及随机兵种碎片！</p>
           </div>
           <button class="action-btn ${store.data.dailyShopClaimed ? 'secondary' : 'green'}" id="btn-shop-free">
@@ -357,217 +400,92 @@ export class GameUI {
           </button>
         </div>
 
-        <div class="deck-panel-box" style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <h4 style="font-size:15px;color:#80d8ff;">🧰 精锐部队五连抽补给箱</h4>
-            <p style="font-size:12px;color:#cfd8dc;margin-top:2px;">必出 5 组高阶红警兵种/光棱塔/金矿卡牌碎片！</p>
+        <div class="deck-panel-box" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          ${ico('chest_gold', 56)}
+          <div style="flex:1;">
+            <h4 style="font-size:15px;color:#80d8ff;">高级王者五连补给箱</h4>
+            <p style="font-size:12px;color:#cfd8dc;margin-top:2px;">必出 5 组高阶红警重坦/战机/光棱塔/金矿碎片！</p>
           </div>
-          <button class="action-btn gold" id="btn-shop-gems">💎 80 抽取</button>
+          <button class="action-btn gold" id="btn-shop-gems">${ico('ui_gem', 15)} 80 抽取</button>
         </div>
 
-        <div class="deck-panel-box" style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <h4 style="font-size:15px;color:#ffe082;">🪙 军费物资征召箱</h4>
+        <div class="deck-panel-box" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          ${ico('nav_shop', 54)}
+          <div style="flex:1;">
+            <h4 style="font-size:15px;color:#ffe082;">军费物资征召箱</h4>
             <p style="font-size:12px;color:#cfd8dc;margin-top:2px;">消耗金币抽取 4 组主力作战兵种碎片！</p>
           </div>
-          <button class="action-btn" id="btn-shop-gold">🪙 1200 抽取</button>
+          <button class="action-btn" id="btn-shop-gold">${ico('ui_coin', 15)} 1200 抽取</button>
         </div>
       `;
     }
 
-    // Tab 5: Unit Counter Matrix & Tactical Manual (`克制`)
+    // Tab 5: Visual 3D Unit Counter Matrix (`克制`)
+    const counterRows = [
+      {
+        atk: 'card_heavy_gunner',
+        def: 'card_missile_car',
+        border: '#4fc3f7',
+        bg: 'rgba(41,121,255,0.2)',
+        title: '重机枪兵  克制  装甲车系 (225%伤害)',
+        desc: '穿甲加特林撕碎【导弹车】与【火炮战车】，同时兼备对空扫射火力。',
+      },
+      {
+        atk: 'card_bunker',
+        def: 'card_assault_infantry',
+        border: '#69f0ae',
+        bg: 'rgba(0,230,118,0.16)',
+        title: '机枪碉堡  克制  步兵系 (225%伤害)',
+        desc: '钢筋混凝土地堡交叉火网瞬间压制【重机枪兵】【突击大兵】与【空投伞兵】！',
+      },
+      {
+        atk: 'card_jetpack_trooper',
+        def: 'card_rhino_tank',
+        border: '#ce93d8',
+        bg: 'rgba(171,71,188,0.22)',
+        title: '火箭飞行兵 / 黑鹰战机  克制  坦克系 (225%伤害)',
+        desc: '无视地形高空打击！【主战坦克】无法对空，遭遇飞行兵必须配导弹车护航！',
+      },
+      {
+        atk: 'card_sam_tower',
+        def: 'card_jet_fighter',
+        border: '#ffd54f',
+        bg: 'rgba(255,171,0,0.18)',
+        title: '导弹车 / 防空导弹塔  克制  空军系 (225%伤害)',
+        desc: '8联装防空导弹与机动导弹战车超远锁定敌军飞行兵与轰炸战机！',
+      },
+      {
+        atk: 'card_artillery_car',
+        def: 'card_bunker',
+        border: '#ff5252',
+        bg: 'rgba(255,82,82,0.18)',
+        title: '火炮战车 / 主战坦克  克制  碉堡与防御塔',
+        desc: '火炮战车超远射程无伤拆毁敌军碉堡群，主战坦克与天启重坦正面碾压推家！',
+      },
+    ];
+
     return `
       <div class="deck-panel-box">
-        <h3 style="font-size:16px;color:#ffe082;margin-bottom:6px;">⚔️ 《精英军团》核心兵种克制闭环</h3>
-        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;line-height:1.45;">
-          <div style="padding:8px;border-radius:8px;background:rgba(41,121,255,0.2);border-left:4px solid #4fc3f7;">
-            <b>🪖 重机枪兵 ➔ 克制 ➔ 🚙 装甲车系 (225%伤害)</b><br/>
-            穿甲加特林撕碎【导弹车】与【火炮战车】，并可轻火力防空。
-          </div>
-          <div style="padding:8px;border-radius:8px;background:rgba(0,230,118,0.16);border-left:4px solid #69f0ae;">
-            <b>🏰 机枪碉堡 ➔ 克制 ➔ 🪖 步兵系 (225%伤害)</b><br/>
-            钢筋混凝土机枪火网瞬间融化敌方【重机枪兵】【突击大兵】与【空降伞兵】！
-          </div>
-          <div style="padding:8px;border-radius:8px;background:rgba(171,71,188,0.22);border-left:4px solid #ce93d8;">
-            <b>✈️ 火箭飞行兵 / 黑鹰战机 ➔ 克制 ➔ 🛡️ 坦克系 (225%伤害)</b><br/>
-            无视地形直飞高空打击！陆战【主战坦克】无法对空，只能挨打！
-          </div>
-          <div style="padding:8px;border-radius:8px;background:rgba(255,171,0,0.18);border-left:4px solid #ffd54f;">
-            <b>🚙 导弹车 / 🚀 防空塔 ➔ 克制 ➔ ✈️ 空军系 (225%伤害)</b><br/>
-            敌方爆飞行兵或黑鹰战机时，翻开导弹车或防空导弹塔即可轻松净空！
-          </div>
-          <div style="padding:8px;border-radius:8px;background:rgba(255,82,82,0.18);border-left:4px solid #ff5252;">
-            <b>🚙 火炮战车 / 🛡️ 主战坦克 ➔ 克制 ➔ 🏰 机枪碉堡与防御塔</b><br/>
-            火炮车超远射程白嫖拆毁敌方碉堡群，主战坦克厚甲顶线推进！
-          </div>
+        <h3 style="font-size:16px;color:#ffe082;margin-bottom:8px;">《精英军团》3D 兵种克制实战图鉴</h3>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.45;">
+          ${counterRows
+            .map(
+              (r) => `
+              <div style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:10px;background:${r.bg};border-left:4px solid ${r.border};">
+                ${ico(r.atk, 42)}
+                <span style="font-weight:900;color:#ffe082;font-size:12px;">克 &gt;</span>
+                ${ico(r.def, 42)}
+                <div style="flex:1;">
+                  <div style="font-weight:900;color:#ffffff;">${r.title}</div>
+                  <div style="color:#d7e8ff;font-size:11.5px;margin-top:2px;">${r.desc}</div>
+                </div>
+              </div>
+            `
+            )
+            .join('')}
         </div>
       </div>
-
-      <div class="deck-panel-box" style="font-size:12px;line-height:1.6;color:#e0f7fa;">
-        <h4 style="color:#80d8ff;margin-bottom:4px;">💡 实战“开格子”必胜秘诀：</h4>
-        1. <b>开局先开双矿</b>：地图上闪烁彩色宝石圈的格子必出【钻井金矿】，经济领先才能源源不断暴兵！<br/>
-        2. <b>侦察敌方基地</b>：点右侧【🔭敌情】或拖动屏幕观察上方敌军解锁了什么兵营，针对性翻开克制兵营！<br/>
-        3. <b>伞兵奇袭断矿</b>：右下角【🪂召唤伞兵】冷却完毕后，直接点击敌军后排金矿空投5名精锐伞兵偷矿！
-      </div>
     `;
-  }
-
-  private drawSnowyWatchtowerDiorama(): void {
-    if (this.dioramaRaf) {
-      cancelAnimationFrame(this.dioramaRaf);
-      this.dioramaRaf = null;
-    }
-    const canvas = this.root.querySelector('#diorama-canvas') as HTMLCanvasElement | null;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
-
-    const snowFlakes = Array.from({ length: 26 }, (_, i) => ({
-      x: ((i * 53) % 440) - 220,
-      y: ((i * 41) % 300) - 160,
-      r: 1.8 + (i % 3) * 1.1,
-      spd: 0.45 + (i % 4) * 0.22,
-    }));
-
-    const renderFrame = (timeMs: number) => {
-      if (!canvas.isConnected || this.view !== 'lobby' || this.activeTab !== 'battle') {
-        this.dioramaRaf = null;
-        return;
-      }
-      const t = timeMs * 0.001;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      ctx.save();
-      ctx.translate(290, 215 + Math.sin(t * 2.1) * 4);
-
-      // 3D Isometric Metallic Hex Base Pedestal (Screenshot 4!)
-      ctx.fillStyle = '#1b2845';
-      ctx.strokeStyle = '#90a4ae';
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(0, -145);
-      ctx.lineTo(225, -35);
-      ctx.lineTo(175, 130);
-      ctx.lineTo(-175, 130);
-      ctx.lineTo(-225, -35);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Snowy Terrain Island + Frozen Cyan River in Center
-      ctx.fillStyle = '#eceff1';
-      ctx.beginPath();
-      ctx.moveTo(0, -132);
-      ctx.lineTo(205, -30);
-      ctx.lineTo(155, 112);
-      ctx.lineTo(-155, 112);
-      ctx.lineTo(-205, -30);
-      ctx.closePath();
-      ctx.fill();
-
-      // Shimmering cyan river channel + wooden bridge
-      ctx.fillStyle = '#4dd0e1';
-      ctx.beginPath();
-      ctx.ellipse(-25, 32, 88, 42, 0.35, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.ellipse(-25 + Math.sin(t * 2) * 5, 32, 54, 20, 0.35, 0, Math.PI);
-      ctx.stroke();
-
-      ctx.fillStyle = '#8d6e63';
-      ctx.strokeStyle = '#4e342e';
-      ctx.lineWidth = 3;
-      ctx.save();
-      ctx.translate(-15, 36);
-      ctx.rotate(-0.42);
-      ctx.fillRect(-34, -12, 68, 24);
-      ctx.strokeRect(-34, -12, 68, 24);
-      ctx.restore();
-
-      // Snowy Rock Cliff + Red Alert Watchtower with Waving Red Flag at Peak!
-      ctx.fillStyle = '#78909c';
-      ctx.fillRect(-55, -95, 120, 68);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.ellipse(5, -95, 68, 28, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = '#5d4037';
-      ctx.lineWidth = 5;
-      ctx.strokeRect(-18, -155, 36, 52);
-      ctx.fillStyle = '#eceff1';
-      ctx.beginPath();
-      ctx.moveTo(-26, -155);
-      ctx.lineTo(0, -176);
-      ctx.lineTo(26, -155);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Animated waving red flag!
-      const wave = Math.sin(t * 6.5) * 4.5;
-      ctx.strokeStyle = '#37474f';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(0, -176);
-      ctx.lineTo(0, -204);
-      ctx.stroke();
-      ctx.fillStyle = '#ff1744';
-      ctx.beginPath();
-      ctx.moveTo(0, -204);
-      ctx.quadraticCurveTo(15, -200 + wave, 30, -195 - wave * 0.5);
-      ctx.lineTo(0, -187);
-      ctx.closePath();
-      ctx.fill();
-
-      // Snow-dusted pine trees around island
-      const pines = [
-        [-135, -35],
-        [-75, -108],
-        [95, -95],
-        [142, -18],
-        [-125, 65],
-      ];
-      for (const [px, py] of pines) {
-        ctx.fillStyle = '#2e7d32';
-        for (let tier = 0; tier < 3; tier++) {
-          const yOff = py - tier * 18;
-          const w = 32 - tier * 6;
-          ctx.beginPath();
-          ctx.moveTo(px, yOff - 28);
-          ctx.lineTo(px + w, yOff);
-          ctx.lineTo(px - w, yOff);
-          ctx.closePath();
-          ctx.fill();
-
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.moveTo(px, yOff - 28);
-          ctx.lineTo(px + w * 0.55, yOff - 12);
-          ctx.lineTo(px - w * 0.55, yOff - 12);
-          ctx.closePath();
-          ctx.fill();
-          ctx.fillStyle = '#2e7d32';
-        }
-      }
-
-      // Gently drifting snowflakes
-      ctx.fillStyle = 'rgba(255,255,255,0.82)';
-      for (const sf of snowFlakes) {
-        sf.y += sf.spd;
-        sf.x += Math.sin(t * 1.5 + sf.r) * 0.35;
-        if (sf.y > 140) sf.y = -175;
-        ctx.beginPath();
-        ctx.arc(sf.x, sf.y, sf.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-      this.dioramaRaf = requestAnimationFrame(renderFrame);
-    };
-
-    this.dioramaRaf = requestAnimationFrame(renderFrame);
   }
 
   private bindLobbyEvents(): void {
@@ -578,15 +496,15 @@ export class GameUI {
       modal.className = 'modal-backdrop';
       modal.innerHTML = `
         <div class="modal-card" style="text-align:center;">
-          <h3 style="font-size:18px;color:#ffe082;margin-bottom:8px;">🌐 手机端在线部署地址</h3>
+          <h3 style="font-size:18px;color:#ffe082;margin-bottom:8px;">手机端在线部署地址</h3>
           <p style="font-size:12.5px;color:#cfd8dc;line-height:1.5;">
-            复制以下公网直连地址在手机浏览器打开，即可全屏触控畅玩《精英军团》：
+            复制以下公网地址在手机浏览器打开，即可全屏触控体验 WebGL 3D 版《精英军团》：
           </p>
           <div style="margin:12px 0;padding:10px;border-radius:9px;background:rgba(0,0,0,0.45);border:1px solid #80d8ff;font-size:12px;word-break:break-all;font-weight:800;color:#69f0ae;user-select:text;-webkit-user-select:text;">
             ${instantUrl}
           </div>
           <div style="display:flex;gap:8px;">
-            <button class="action-btn gold" id="btn-copy-link" style="flex:1;">📋 复制公网直连网址</button>
+            <button class="action-btn gold" id="btn-copy-link" style="flex:1;">复制公网直连网址</button>
             <button class="action-btn secondary" id="btn-close-share">关闭</button>
           </div>
         </div>
@@ -595,7 +513,7 @@ export class GameUI {
       modal.querySelector('#btn-close-share')?.addEventListener('click', () => modal.remove());
       modal.querySelector('#btn-copy-link')?.addEventListener('click', () => {
         navigator.clipboard?.writeText(instantUrl).catch(() => {});
-        this.showToast('✅ 已复制公网直连网址！', 'good');
+        this.showToast('已复制公网直连网址！', 'good');
         modal.remove();
       });
     });
@@ -634,7 +552,7 @@ export class GameUI {
       sound.playBuild();
       store.data.gold += 250;
       store.save();
-      this.showToast('🎁 领取军团战备津贴 +250 金币！', 'good');
+      this.showToast('领取军团战备津贴 +250 金币！', 'good');
       this.render();
     });
 
@@ -642,7 +560,7 @@ export class GameUI {
       sound.playClick();
       const idx = (OPPONENT_PROFILES.indexOf(this.currentOpponent) + 1) % OPPONENT_PROFILES.length;
       this.currentOpponent = OPPONENT_PROFILES[idx];
-      this.showToast(`🎯 下一战匹配目标已切换：${this.currentOpponent.name}`, 'info');
+      this.showToast(`下一战匹配对手已切换：${this.currentOpponent.name}`, 'info');
     });
 
     this.root.querySelector('#btn-start-pvp')?.addEventListener('click', () => {
@@ -675,7 +593,7 @@ export class GameUI {
         }
         sound.playVictory(true);
         this.render();
-        this.showRewardsModal('🎉 宝箱开启成功！', res.rewards);
+        this.showRewardsModal('战利品宝箱开启成功！', res.rewards);
       });
     });
 
@@ -713,7 +631,7 @@ export class GameUI {
         store.data.selectedCommanderId = cid;
         store.save();
         sound.playSkill();
-        this.showToast(`🎖️ 已委任统帅！战斗右下角技能已更新`, 'good');
+        this.showToast('已委任统帅！战斗右下角主动技能已更新', 'good');
         this.render();
       });
     });
@@ -721,7 +639,7 @@ export class GameUI {
     // Supply Shop Gacha Buttons
     this.root.querySelector('#btn-shop-free')?.addEventListener('click', () => {
       if (store.data.dailyShopClaimed) {
-        this.showToast('今日免费补给已领取！可体验钻石/金币抽卡包', 'info');
+        this.showToast('今日免费补给已领取！可体验钻石或金币征召箱', 'info');
         return;
       }
       store.data.dailyShopClaimed = true;
@@ -732,7 +650,7 @@ export class GameUI {
       store.save();
       sound.playVictory(true);
       this.render();
-      this.showRewardsModal('🎁 每日军备补给到账！', {
+      this.showRewardsModal('每日军备补给到账！', {
         gold: 600,
         diamonds: 40,
         cards: [{ id: randomCard, count: 25 }],
@@ -741,7 +659,7 @@ export class GameUI {
 
     this.root.querySelector('#btn-shop-gems')?.addEventListener('click', () => {
       if (store.data.diamonds < 80) {
-        this.showToast('钻石不足 80！打赢对战或开箱可获得钻石', 'warn');
+        this.showToast('钻石不足 80！打赢对战或开启宝箱可获得钻石', 'warn');
         return;
       }
       store.data.diamonds -= 80;
@@ -754,7 +672,7 @@ export class GameUI {
       store.save();
       sound.playVictory(true);
       this.render();
-      this.showRewardsModal('✨ 精锐五连抽补给结果', { gold: 200, diamonds: 0, cards });
+      this.showRewardsModal('高级王者五连补给结果', { gold: 200, diamonds: 0, cards });
     });
 
     this.root.querySelector('#btn-shop-gold')?.addEventListener('click', () => {
@@ -772,7 +690,7 @@ export class GameUI {
       store.save();
       sound.playVictory(true);
       this.render();
-      this.showRewardsModal('🪙 军费征召结果', { gold: 0, diamonds: 5, cards });
+      this.showRewardsModal('军费征召补给结果', { gold: 0, diamonds: 5, cards });
     });
   }
 
@@ -789,10 +707,12 @@ export class GameUI {
     modal.innerHTML = `
       <div class="modal-card">
         <div style="display:flex;gap:12px;align-items:center;">
-          <img src="${renderCardIllustrationDataURL(cardId)}" style="width:92px;height:82px;object-fit:contain;background:rgba(255,255,255,0.08);border-radius:10px;padding:4px;" />
+          <img src="${renderCardIllustrationDataURL(cardId)}" style="width:94px;height:86px;object-fit:contain;background:rgba(255,255,255,0.1);border-radius:10px;padding:4px;" />
           <div style="flex:1;">
             <div style="font-size:18px;font-weight:900;">${card.name} <span style="color:#ffd54f;font-size:14px;">${lv}级</span></div>
-            <div style="font-size:12px;color:#80d8ff;margin-top:2px;">解锁格耗费: 🪙 ${card.cost} | 建筑: ${card.buildingName}</div>
+            <div style="font-size:12px;color:#80d8ff;margin-top:3px;">
+              解锁格耗费: ${ico('ui_coin', 14)} ${card.cost} | 建筑: ${card.buildingName}
+            </div>
             <div style="font-size:11.5px;color:#cfd8dc;margin-top:3px;">碎片进度: ${shards} / ${needed}</div>
           </div>
         </div>
@@ -800,8 +720,8 @@ export class GameUI {
         <p style="margin-top:10px;font-size:12.5px;line-height:1.5;color:#eceff1;">${card.description}</p>
 
         <div style="margin-top:10px;padding:9px;border-radius:8px;background:rgba(0,0,0,0.34);font-size:12px;line-height:1.55;">
-          <div style="color:#69f0ae;font-weight:800;">✔ ${card.countersText}</div>
-          <div style="color:#ff8a80;margin-top:3px;">✖ ${card.counteredByText}</div>
+          <div style="color:#69f0ae;font-weight:800;">优势：${card.countersText}</div>
+          <div style="color:#ff8a80;margin-top:3px;">弱点：${card.counteredByText}</div>
         </div>
 
         ${
@@ -826,7 +746,7 @@ export class GameUI {
               ? `
             <div style="margin-top:12px;">
               <button class="action-btn green" id="btn-equip-def" style="width:100%;">
-                ${deck.defense === cardId ? '✔ 当前已装备该防御塔' : `上阵替换【${CARDS[deck.defense].shortName}】`}
+                ${deck.defense === cardId ? '当前已装备该防御塔' : `上阵替换【${CARDS[deck.defense].shortName}】`}
               </button>
             </div>
           `
@@ -835,7 +755,7 @@ export class GameUI {
 
         <div style="display:flex;gap:8px;margin-top:14px;">
           <button class="action-btn gold" id="btn-do-upgrade" style="flex:1;">
-            ⬆ 升级卡牌 (🪙 ${goldCost})
+            升级卡牌 (${ico('ui_coin', 15)} ${goldCost})
           </button>
           <button class="action-btn secondary" id="btn-close-modal">关闭</button>
         </div>
@@ -892,15 +812,15 @@ export class GameUI {
       <div class="modal-card" style="text-align:center;">
         <h3 style="font-size:19px;color:#ffe082;margin-bottom:10px;">${title}</h3>
         <div style="display:flex;justify-content:center;gap:16px;font-size:15px;font-weight:900;margin-bottom:12px;">
-          ${rewards.gold > 0 ? `<span>🪙 +${rewards.gold}</span>` : ''}
-          ${rewards.diamonds > 0 ? `<span>💎 +${rewards.diamonds}</span>` : ''}
+          ${rewards.gold > 0 ? `<span>${ico('ui_coin', 18)} +${rewards.gold}</span>` : ''}
+          ${rewards.diamonds > 0 ? `<span>${ico('ui_gem', 18)} +${rewards.diamonds}</span>` : ''}
         </div>
         <div style="display:grid;grid-template-columns:repeat(${Math.min(4, Math.max(1, rewards.cards.length))}, 1fr);gap:8px;">
           ${rewards.cards
             .map(
               (c) => `
               <div style="background:rgba(255,255,255,0.1);border-radius:10px;padding:6px;border:1px solid #80d8ff;">
-                <img src="${renderCardIllustrationDataURL(c.id)}" style="width:100%;height:56px;object-fit:contain;" />
+                <img src="${renderCardIllustrationDataURL(c.id)}" style="width:100%;height:58px;object-fit:contain;" />
                 <div style="font-size:11px;font-weight:800;">${CARDS[c.id].shortName}</div>
                 <div style="font-size:12px;color:#69f0ae;font-weight:900;">+${c.count} 碎片</div>
               </div>
@@ -931,13 +851,15 @@ export class GameUI {
     const opp = this.currentOpponent;
     const onlineCount = 23480 + Math.floor(Math.random() * 160);
 
+    const lensSvg = `<svg viewBox="0 0 64 64" width="62" height="62"><circle cx="28" cy="28" r="18" fill="rgba(168,216,255,0.45)" stroke="#1e272e" stroke-width="4.5"/><path d="M20 21a10 10 0 0 1 12-3" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/><line x1="41" y1="41" x2="56" y2="56" stroke="#ff9f43" stroke-width="9" stroke-linecap="round"/><line x1="41" y1="41" x2="56" y2="56" stroke="#1e272e" stroke-width="3" stroke-linecap="round"/></svg>`;
+
     this.root.innerHTML = `
       <div class="matchmaking-screen">
         <div class="mm-top-info">
           <div class="mm-title" id="mm-status-text">
             ${this.pendingMode === 'coop' ? '匹配合作战友..' : '搜寻对手..'}
           </div>
-          <div class="mm-timer-pill">⏱ <span id="mm-sec">1s</span></div>
+          <div class="mm-timer-pill"><span id="mm-sec">1s</span></div>
           <div style="font-size:12.5px;font-weight:700;">
             当前有 <span style="color:#69f0ae;font-weight:900;">${onlineCount}人</span> 正在战斗中，预计匹配时间: <span style="color:#69f0ae;">2s</span>
           </div>
@@ -946,9 +868,9 @@ export class GameUI {
         <div class="mm-enemy-banner" id="mm-enemy-box">
           <div>
             <div style="font-size:13px;color:#ffcdd2;">正在雷达扫描战区目标...</div>
-            <div style="font-size:18px;font-weight:900;margin-top:4px;" id="mm-opp-reveal">🔍 搜索信号中</div>
+            <div style="font-size:18px;font-weight:900;margin-top:4px;" id="mm-opp-reveal">搜索敌方信号中</div>
           </div>
-          <div style="font-size:48px;">🔍</div>
+          <div>${lensSvg}</div>
         </div>
 
         <div class="mm-player-banner">
@@ -957,11 +879,13 @@ export class GameUI {
               <div class="mini-ava"><img src="${renderAvatarDataURL('player')}" alt="me" /></div>
               <div>
                 <div style="font-size:15px;font-weight:900;">${store.data.playerName}</div>
-                <div style="font-size:12px;">✊ ${store.getCombatPowerPct()}% &nbsp; 🏆 ${store.data.trophies}</div>
+                <div style="font-size:12px;">
+                  ${ico('ui_power', 14)} ${store.getCombatPowerPct()}% &nbsp; ${ico('ui_trophy', 15)} ${store.data.trophies}
+                </div>
               </div>
             </div>
             <div style="display:flex;gap:6px;">
-              <button class="action-btn gold" id="btn-instant-go" style="padding:5px 9px;font-size:11.5px;">⚡秒进</button>
+              <button class="action-btn gold" id="btn-instant-go" style="padding:5px 9px;font-size:11.5px;">秒进战场</button>
               <button class="action-btn secondary" id="btn-cancel-mm" style="padding:5px 10px;font-size:11.5px;">取消</button>
             </div>
           </div>
@@ -970,9 +894,9 @@ export class GameUI {
             ${sixCards
               .map(
                 (cid) => `
-                <div style="background:rgba(12,24,48,0.65);border:1.5px solid #90caf9;border-radius:7px;padding:3px;text-align:center;position:relative;">
-                  <span style="position:absolute;top:-4px;left:-3px;background:#ffb300;color:#000;font-size:9px;font-weight:900;padding:0 3px;border-radius:6px;">${CARDS[cid].cost}</span>
-                  <img src="${renderCardIllustrationDataURL(cid)}" style="width:100%;height:42px;object-fit:contain;" />
+                <div style="background:linear-gradient(180deg,#3484e8,#1b4c94);border:1.5px solid #90caf9;border-radius:7px;padding:3px;text-align:center;position:relative;">
+                  <span style="position:absolute;top:-4px;left:-3px;background:#ffb300;color:#000;font-size:9px;font-weight:900;padding:0 3.5px;border-radius:6px;">${CARDS[cid].cost}</span>
+                  <img src="${renderCardIllustrationDataURL(cid)}" style="width:100%;height:44px;object-fit:contain;" />
                   <div style="font-size:9.5px;font-weight:800;">${store.data.cardLevels[cid] || 8}级</div>
                 </div>
               `
@@ -982,7 +906,7 @@ export class GameUI {
         </div>
 
         <div style="text-align:center;padding:0 14px;font-size:12.5px;font-weight:800;text-shadow:0 1px 3px #000;">
-          🔊 ${tip}
+          提示：${tip}
         </div>
       </div>
     `;
@@ -1013,7 +937,7 @@ export class GameUI {
           revealEl.textContent =
             this.pendingMode === 'coop'
               ? `盟友【苍白哥哥】已就位 vs 红警BOSS群`
-              : `${opp.name}（✊ ${opp.powerPct}%）`;
+              : `${opp.name}（战力 ${opp.powerPct}%）`;
         }
       }
 
@@ -1028,13 +952,10 @@ export class GameUI {
   // 3. LIVE BATTLE HUD & INTERACTIVE CONTROLS (Screenshots 6, 1, 2, 7)
   // =========================================================================
   private launchPhaserBattle(): void {
-    const scene = this.getBattleScene();
-    if (!scene) return;
-
     this.view = 'battle';
     this.renderBattleHUD();
 
-    scene.startNewMatch({
+    this.launchEngineBattle({
       mode: this.pendingMode,
       opponent: this.currentOpponent,
       onHudUpdate: (hud) => this.updateBattleHUDDOM(hud),
@@ -1065,15 +986,15 @@ export class GameUI {
                 <div class="mini-ava"><img src="${renderAvatarDataURL('player')}" alt="player" /></div>
                 <div>
                   <div style="font-size:12.5px;font-weight:900;color:#80d8ff;">${store.data.playerName}</div>
-                  <div style="font-size:11px;font-weight:800;">🏆 ${store.data.trophies}</div>
-                  <div style="font-size:11px;font-weight:800;color:#ffd54f;">✊ ${store.getCombatPowerPct()}%</div>
+                  <div style="font-size:11px;font-weight:800;">${ico('ui_trophy', 13)} ${store.data.trophies}</div>
+                  <div style="font-size:11px;font-weight:800;color:#ffd54f;">${ico('ui_power', 13)} ${store.getCombatPowerPct()}%</div>
                 </div>
               </div>
-              <div class="pop-pill">👤 <span id="hud-p-pop">0/50</span></div>
+              <div class="pop-pill">兵力 <span id="hud-p-pop">0/50</span></div>
             </div>
 
             <div class="match-clock-box">
-              <div>⏱ <span id="hud-clock">04:00</span></div>
+              <div><span id="hud-clock">04:00</span></div>
               <div id="hud-mode-sub" style="font-size:10px;color:#80d8ff;display:none;"></div>
             </div>
 
@@ -1084,12 +1005,14 @@ export class GameUI {
                   <div style="font-size:12.5px;font-weight:900;color:#ff8a80;">
                     ${this.pendingMode === 'coop' ? '北方红警要塞' : opp.name}
                   </div>
-                  <div style="font-size:11px;font-weight:800;">🏆 ${oppTrophies}</div>
-                  <div style="font-size:11px;font-weight:800;color:#ffd54f;">✊ ${opp.powerPct}%</div>
+                  <div style="font-size:11px;font-weight:800;">${ico('ui_trophy', 13)} ${oppTrophies}</div>
+                  <div style="font-size:11px;font-weight:800;color:#ffd54f;">${ico('ui_power', 13)} ${opp.powerPct}%</div>
                 </div>
               </div>
-              <div class="pop-pill">👤 <span id="hud-e-pop">0/50</span></div>
-              <div class="enemy-para-badge" title="敌军伞兵空投倒计时">🪂 <span id="hud-e-para">31s</span></div>
+              <div class="pop-pill">兵力 <span id="hud-e-pop">0/50</span></div>
+              <div class="enemy-para-badge" title="敌军伞兵空投倒计时">
+                ${ico('ui_parachute_icon', 15)} <span id="hud-e-para">31s</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1097,44 +1020,46 @@ export class GameUI {
         <!-- Middle Quick Tactical & Camera Controls -->
         <div class="bhud-mid" id="bhud-mid-layer">
           <div class="right-cam-tools">
-            <button class="cam-jump-btn" data-cam="enemy">🔭敌情</button>
-            <button class="cam-jump-btn" data-cam="front">⚔️前线</button>
-            <button class="cam-jump-btn" data-cam="home">🏠基地</button>
-            <button class="cam-jump-btn" data-cam="overview">🗺️全景</button>
+            <button class="cam-jump-btn" data-cam="enemy">敌方基地</button>
+            <button class="cam-jump-btn" data-cam="front">前线交火</button>
+            <button class="cam-jump-btn" data-cam="home">我方基地</button>
+            <button class="cam-jump-btn" data-cam="overview">全图视角</button>
           </div>
 
           <div class="left-side-tools">
-            <button class="tool-square-btn" id="btn-battle-menu" title="菜单/倍速">☰</button>
-            <button class="tool-square-btn" id="btn-battle-guide" title="兵种克制表">📖</button>
-            <button class="tool-square-btn" id="btn-battle-emote" title="发送战地指令">😄</button>
+            <button class="tool-square-btn" id="btn-battle-menu" title="菜单/倍速">菜单</button>
+            <button class="tool-square-btn" id="btn-battle-guide" title="兵种克制表">克制</button>
+            <button class="tool-square-btn" id="btn-battle-emote" title="发送战地指令">指令</button>
             <button class="tool-square-btn" id="btn-battle-stats" style="font-size:11px;">战况</button>
           </div>
         </div>
 
-        <!-- Bottom Action Bar: 科技强化 | 金币 | 召唤伞兵 | 指挥官技能 -->
+        <!-- Bottom Action Bar: 3D 科技强化 | 3D 金币 | 3D 召唤伞兵 | 3D 指挥官大招 -->
         <div class="bhud-bottom">
           <button class="hex-action-btn" id="btn-tech-up">
-            <span style="font-size:22px;line-height:1;">🛠️</span>
-            <span style="font-size:11.5px;font-weight:900;" id="hud-tech-label">科技强化</span>
-            <span style="font-size:12px;font-weight:900;color:#ffd54f;" id="hud-tech-cost">🪙 30</span>
+            ${ico('ui_tech_hammer', 38)}
+            <span style="font-size:11px;font-weight:900;margin-top:-2px;" id="hud-tech-label">科技强化</span>
+            <span style="font-size:11.5px;font-weight:900;color:#ffd54f;display:flex;align-items:center;gap:3px;" id="hud-tech-cost-wrap">
+              ${ico('ui_coin', 13)} <span id="hud-tech-cost">30</span>
+            </span>
           </button>
 
           <div class="gold-counter-pill">
-            <span style="font-size:20px;">🪙</span>
-            <span class="gold-num" id="hud-gold">65</span>
+            ${ico('ui_coin', 24)}
+            <span class="gold-num" id="hud-gold">85</span>
             <span style="font-size:10.5px;color:#69f0ae;font-weight:800;" id="hud-income">+4.0/s</span>
           </div>
 
           <div style="display:flex;align-items:flex-end;gap:7px;">
             <button class="hex-action-btn" id="btn-paratrooper">
-              <span style="font-size:21px;line-height:1;">🪂</span>
-              <span style="font-size:13px;font-weight:900;" id="hud-para-cd">14s</span>
-              <span style="font-size:11px;font-weight:900;">召唤伞兵</span>
+              ${ico('ui_parachute_icon', 36)}
+              <span style="font-size:13px;font-weight:900;margin-top:-2px;" id="hud-para-cd">14s</span>
+              <span style="font-size:10.5px;font-weight:900;">召唤伞兵</span>
             </button>
 
             <button class="cmd-skill-btn" id="btn-cmd-skill" title="${cmd.skillName}：${cmd.skillDesc}">
-              <span style="font-size:18px;line-height:1;">⚡</span>
-              <span id="hud-cmd-cd">8s</span>
+              <img src="${getStudioAsset('ui_cmd_soldier')}" alt="技能" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" />
+              <span class="cmd-cd-pill" id="hud-cmd-cd">8s</span>
             </button>
           </div>
         </div>
@@ -1175,10 +1100,10 @@ export class GameUI {
     this.root.querySelector('#btn-battle-emote')?.addEventListener('click', () => {
       sound.playClick();
       const lines = [
-        '💬 指挥官：准备迎接钢铁洪流吧！',
-        '💬 指挥官：重机枪兵就位，专治装甲车！',
-        '💬 指挥官：火箭飞行兵升空，坦克颤抖吧！',
-        '💬 指挥官：开矿暴兵，一举推平敌方基地！',
+        '指挥官：准备迎接钢铁洪流吧！',
+        '指挥官：重机枪兵就位，专治导弹车与火炮车！',
+        '指挥官：火箭飞行兵升空，主战坦克颤抖吧！',
+        '指挥官：抢占双矿暴兵，一举推平敌方基地！',
       ];
       this.showToast(lines[Math.floor(Math.random() * lines.length)], 'good');
     });
@@ -1188,7 +1113,7 @@ export class GameUI {
       if (!this.lastHud) return;
       const h = this.lastHud;
       this.showToast(
-        `📊 已建建筑 ${h.buildingsBuilt} | 出兵 ${h.playerUnitsSpawned} | 歼敌 ${h.enemyUnitsKilled} | 采矿 ${h.totalGoldMined}`,
+        `已建建筑 ${h.buildingsBuilt} | 出兵 ${h.playerUnitsSpawned} | 歼敌 ${h.enemyUnitsKilled} | 采矿 ${h.totalGoldMined}`,
         'info'
       );
     });
@@ -1240,11 +1165,10 @@ export class GameUI {
     setTxt('#hud-tech-label', `科技 Lv.${h.techLevel}`);
     const techCostEl = this.root.querySelector('#hud-tech-cost') as HTMLElement | null;
     if (techCostEl) {
-      techCostEl.textContent = h.techLevel >= 6 ? '已满级' : `🪙 ${h.techCost}`;
+      techCostEl.textContent = h.techLevel >= 6 ? '已满级' : `${h.techCost}`;
       techCostEl.style.color = h.playerGold >= h.techCost ? '#ffd54f' : '#ff5252';
     }
 
-    // Paratrooper Button State
     const paraBtn = this.root.querySelector('#btn-paratrooper') as HTMLElement | null;
     if (paraBtn) {
       if (h.paratrooperTargeting) {
@@ -1259,7 +1183,6 @@ export class GameUI {
       }
     }
 
-    // Commander Skill Button State
     const cmdBtn = this.root.querySelector('#btn-cmd-skill') as HTMLElement | null;
     if (cmdBtn) {
       if (h.commanderCd <= 0) {
@@ -1275,7 +1198,7 @@ export class GameUI {
   }
 
   /**
-   * Exact Screenshot 1 Floating Card Tooltip right above tapped hex!
+   * Exact Screenshot 1 & 2 Dark Rounded Floating Card & Counter Tooltip right above tapped hex!
    */
   private showHexCardTooltip(cardId: string, cost: number, level: number, sx: number, sy: number): void {
     const old = this.root.querySelector('.hex-card-tooltip');
@@ -1287,35 +1210,38 @@ export class GameUI {
 
     const tip = document.createElement('div');
     tip.className = 'hex-card-tooltip';
-    const clampedX = Math.max(70, Math.min(this.root.clientWidth - 70, sx));
-    const clampedY = Math.max(195, sy - 10);
+    const clampedX = Math.max(92, Math.min(this.root.clientWidth - 92, sx));
+    const clampedY = Math.max(210, sy - 10);
     tip.style.left = `${clampedX}px`;
     tip.style.top = `${clampedY}px`;
 
     const needMore = Math.max(0, cost - (this.lastHud?.playerGold || 0));
 
     tip.innerHTML = `
-      <div style="font-size:12.5px;font-weight:900;background:#1976d2;border-radius:6px;padding:2px 4px;margin-bottom:4px;">
+      <div style="font-size:12.5px;font-weight:900;background:#228be6;border-radius:6px;padding:2px 6px;margin-bottom:5px;">
         ${card.name}
       </div>
-      <div style="position:relative;background:linear-gradient(180deg,#3484e8,#1b4c94);border-radius:7px;padding:4px;">
-        <span style="position:absolute;top:-4px;left:-4px;background:#ffca28;color:#000;font-weight:900;font-size:10px;padding:1px 5px;border-radius:99px;">${cost}</span>
-        <img src="${renderCardIllustrationDataURL(cardId)}" style="width:88px;height:66px;object-fit:contain;" />
-        <div style="font-size:11px;font-weight:900;">${level}级</div>
+      <div style="position:relative;background:linear-gradient(180deg,#3484e8,#1b4c94);border-radius:8px;padding:5px;border:1.5px solid #90caf9;">
+        <span style="position:absolute;top:-5px;left:-5px;background:#ffca28;color:#000;font-weight:900;font-size:10.5px;padding:1px 5px;border-radius:99px;border:1.5px solid #261600;">${cost}</span>
+        <img src="${renderCardIllustrationDataURL(cardId)}" style="width:94px;height:70px;object-fit:contain;" />
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:900;padding:0 2px;">
+          <span>${level}级</span>
+          <span>${CATEGORY_BADGE_SVG[card.category]}</span>
+        </div>
       </div>
-      <div style="font-size:10px;color:#69f0ae;margin-top:4px;line-height:1.3;font-weight:700;">
+      <div style="font-size:10.5px;color:#fff59d;margin-top:5px;line-height:1.35;font-weight:700;">
         ${card.countersText}
       </div>
       ${
         needMore > 0
-          ? `<div style="font-size:10px;color:#ff8a80;margin-top:2px;font-weight:800;">还差 ${needMore} 金币解锁</div>`
+          ? `<div style="font-size:10px;color:#ff8a80;margin-top:3px;font-weight:800;">还差 ${needMore} 金币解锁</div>`
           : ''
       }
     `;
 
     tip.addEventListener('click', () => tip.remove());
     this.root.appendChild(tip);
-    this.tooltipTimeout = window.setTimeout(() => tip.remove(), 2400);
+    this.tooltipTimeout = window.setTimeout(() => tip.remove(), 2600);
   }
 
   private showQuickCounterOverlay(): void {
@@ -1323,13 +1249,13 @@ export class GameUI {
     modal.className = 'modal-backdrop';
     modal.innerHTML = `
       <div class="modal-card">
-        <h3 style="color:#ffe082;font-size:16px;margin-bottom:8px;">📖 战地兵种克制速查</h3>
-        <div style="font-size:12.5px;line-height:1.75;">
-          • <b>🪖 重机枪兵</b> ➔ 克制 <b>🚙 导弹车 / 火炮车</b> (225%伤害)<br/>
-          • <b>🏰 机枪碉堡</b> ➔ 克制 <b>🪖 重机枪兵 / 大兵 / 伞兵</b> (225%伤害)<br/>
-          • <b>✈️ 火箭飞行兵 / 战机</b> ➔ 克制 <b>🛡️ 主战坦克 / 天启重坦</b><br/>
-          • <b>🚙 导弹车 / 🚀 防空塔</b> ➔ 克制 <b>✈️ 飞行兵 / 黑鹰战机</b><br/>
-          • <b>🚙 火炮战车 / 🛡️ 坦克</b> ➔ 克制 <b>🏰 机枪碉堡 / 光棱塔</b>
+        <h3 style="color:#ffe082;font-size:16px;margin-bottom:8px;">战地 3D 兵种克制速查</h3>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px;line-height:1.5;">
+          <div>${ico('card_heavy_gunner', 26)} <b>重机枪兵</b> 克制 ${ico('card_missile_car', 26)} <b>导弹车 / 火炮车</b> (225%伤害)</div>
+          <div>${ico('card_bunker', 26)} <b>机枪碉堡</b> 克制 ${ico('card_assault_infantry', 26)} <b>重机枪兵 / 大兵 / 伞兵</b> (225%伤害)</div>
+          <div>${ico('card_jetpack_trooper', 26)} <b>飞行兵 / 战机</b> 克制 ${ico('card_rhino_tank', 26)} <b>主战坦克 / 天启重坦</b> (225%伤害)</div>
+          <div>${ico('card_sam_tower', 26)} <b>导弹车 / 防空塔</b> 克制 ${ico('card_jet_fighter', 26)} <b>飞行兵 / 黑鹰战机</b> (225%伤害)</div>
+          <div>${ico('card_artillery_car', 26)} <b>火炮战车 / 坦克</b> 克制 ${ico('card_bunker', 26)} <b>机枪碉堡 / 光棱塔</b></div>
         </div>
         <button class="action-btn gold" id="btn-close-guide" style="margin-top:12px;width:100%;">返回战斗</button>
       </div>
@@ -1347,12 +1273,12 @@ export class GameUI {
     modal.className = 'modal-backdrop';
     modal.innerHTML = `
       <div class="modal-card" style="text-align:center;">
-        <h3 style="font-size:18px;color:#ffe082;margin-bottom:12px;">⚙️ 战地指挥部菜单</h3>
+        <h3 style="font-size:18px;color:#ffe082;margin-bottom:12px;">战地指挥部菜单</h3>
         <div style="display:flex;flex-direction:column;gap:9px;">
-          <button class="action-btn green" id="btn-resume">▶ 继续战斗</button>
-          <button class="action-btn" id="btn-speed">⏩ 切换战斗速度（当前 ${curSpeed}x）</button>
-          <button class="action-btn gold" id="btn-rematch">🔄 重新开局</button>
-          <button class="action-btn secondary" id="btn-quit">🏳️ 撤退返回主界面</button>
+          <button class="action-btn green" id="btn-resume">继续战斗</button>
+          <button class="action-btn" id="btn-speed">切换战斗倍速（当前 ${curSpeed}x）</button>
+          <button class="action-btn gold" id="btn-rematch">重新开局</button>
+          <button class="action-btn secondary" id="btn-quit">撤退返回主界面</button>
         </div>
       </div>
     `;
@@ -1366,7 +1292,7 @@ export class GameUI {
     modal.querySelector('#btn-speed')?.addEventListener('click', () => {
       const nextSpd = scene?.toggleSpeed() || 1;
       scene?.setPausedState(false);
-      this.showToast(`⏩ 战斗倍速已切换为 ${nextSpd}x`, 'good');
+      this.showToast(`战斗倍速已切换为 ${nextSpd}x`, 'good');
       modal.remove();
     });
 
@@ -1377,7 +1303,7 @@ export class GameUI {
 
     modal.querySelector('#btn-quit')?.addEventListener('click', () => {
       modal.remove();
-      scene?.stopToBackdrop();
+      this.returnToEngineHome();
       this.view = 'lobby';
       this.render();
     });
@@ -1385,7 +1311,6 @@ export class GameUI {
 
   private showBattleResultModal(summary: BattleEndSummary): void {
     const rewardInfo = store.recordBattleResult(summary.won, summary.mode);
-    // Advance to next opponent profile on win so player faces fresh deck styles!
     if (summary.won) {
       const nextIdx = (OPPONENT_PROFILES.indexOf(this.currentOpponent) + 1) % OPPONENT_PROFILES.length;
       this.currentOpponent = OPPONENT_PROFILES[nextIdx];
@@ -1395,35 +1320,37 @@ export class GameUI {
     modal.className = 'modal-backdrop';
     modal.innerHTML = `
       <div class="modal-card" style="text-align:center;">
-        <div style="font-size:44px;margin-bottom:4px;">${summary.won ? '🏆' : '💥'}</div>
+        <div style="margin-bottom:6px;">
+          ${ico(summary.won ? 'ui_trophy' : 'rubble_pile', 58)}
+        </div>
         <h2 style="font-size:24px;color:${summary.won ? '#ffd54f' : '#ff8a80'};">
           ${summary.won ? '战役大捷 · 胜利！' : '防线失守 · 惜败'}
         </h2>
         <p style="font-size:13px;color:#e0f7fa;margin-top:4px;">${summary.reason}</p>
 
         <div style="margin-top:12px;padding:10px;border-radius:10px;background:rgba(0,0,0,0.35);display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12.5px;">
-          <div>🟦 我方领地: <b>${summary.playerTiles}格</b></div>
-          <div>🟥 敌方领地: <b>${summary.enemyTiles}格</b></div>
-          <div>⚔️ 歼灭敌军: <b>${summary.kills}</b></div>
-          <div>🏗️ 解锁建筑: <b>${summary.buildingsBuilt}</b></div>
+          <div>我方领地: <b style="color:#80d8ff;">${summary.playerTiles}格</b></div>
+          <div>敌方领地: <b style="color:#ff8a80;">${summary.enemyTiles}格</b></div>
+          <div>歼灭敌军: <b style="color:#ffd54f;">${summary.kills}</b></div>
+          <div>建造设施: <b style="color:#69f0ae;">${summary.buildingsBuilt}</b></div>
         </div>
 
         <div style="margin-top:12px;padding:10px;border-radius:10px;background:rgba(255,213,79,0.12);border:1px solid rgba(255,213,79,0.4);font-size:13px;font-weight:800;">
-          <div>
-            🏆 奖杯 ${rewardInfo.trophyDelta >= 0 ? `+${rewardInfo.trophyDelta}` : rewardInfo.trophyDelta}
-            &nbsp;|&nbsp; 🪙 +${rewardInfo.goldEarned}
-            &nbsp;|&nbsp; 💎 +${rewardInfo.gemEarned}
+          <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
+            <span>${ico('ui_trophy', 16)} ${rewardInfo.trophyDelta >= 0 ? `+${rewardInfo.trophyDelta}` : rewardInfo.trophyDelta}</span>
+            <span>${ico('ui_coin', 16)} +${rewardInfo.goldEarned}</span>
+            <span>${ico('ui_gem', 16)} +${rewardInfo.gemEarned}</span>
           </div>
           ${
             rewardInfo.addedChestTitle
-              ? `<div style="margin-top:5px;color:#69f0ae;">🎁 获得战利品：【${rewardInfo.addedChestTitle}】已放入主页槽位！</div>`
+              ? `<div style="margin-top:6px;color:#69f0ae;">${ico('chest_gold', 18)} 获得战利品：【${rewardInfo.addedChestTitle}】已放入主页槽位！</div>`
               : ''
           }
         </div>
 
         <div style="display:flex;gap:8px;margin-top:14px;">
-          <button class="action-btn gold" id="btn-play-again" style="flex:1;">⚔️ 再来一局</button>
-          <button class="action-btn" id="btn-back-home" style="flex:1;">🏠 返回主页</button>
+          <button class="action-btn gold" id="btn-play-again" style="flex:1;">再来一局</button>
+          <button class="action-btn" id="btn-back-home" style="flex:1;">返回主页</button>
         </div>
       </div>
     `;
@@ -1437,7 +1364,7 @@ export class GameUI {
 
     modal.querySelector('#btn-back-home')?.addEventListener('click', () => {
       modal.remove();
-      this.getBattleScene()?.stopToBackdrop();
+      this.returnToEngineHome();
       this.view = 'lobby';
       this.render();
     });

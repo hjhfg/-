@@ -74,26 +74,28 @@ body {
 .lobby-screen {
   position: absolute;
   inset: 0;
-  pointer-events: auto;
   display: flex;
   flex-direction: column;
+}
+
+.lobby-screen.battle-home-active {
+  background: transparent;
+  pointer-events: none;
+}
+
+.lobby-screen.solid-tab {
+  pointer-events: auto;
   background:
-    radial-gradient(circle at 50% 34%, rgba(92, 134, 224, 0.45) 0%, rgba(44, 65, 120, 0.96) 72%),
-    repeating-linear-gradient(
-      0deg,
-      rgba(255, 255, 255, 0.025) 0px,
-      rgba(255, 255, 255, 0.025) 1px,
-      transparent 1px,
-      transparent 32px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.025) 0px,
-      rgba(255, 255, 255, 0.025) 1px,
-      transparent 1px,
-      transparent 32px
-    ),
-    #344b85;
+    radial-gradient(circle at 50% 24%, rgba(64, 96, 168, 0.92) 0%, rgba(30, 44, 78, 0.98) 78%),
+    #25355c;
+}
+
+.ui-clickable {
+  pointer-events: auto;
+}
+
+.lobby-body.home-passthrough {
+  pointer-events: none;
 }
 
 .top-resource-bar {
@@ -263,21 +265,17 @@ body {
   text-shadow: 0 1px 2px #000;
 }
 
-/* Center Snowy Hex Watchtower Diorama Showcase (Screenshot 4) */
+/* Center Snowy Hex Watchtower Diorama Showcase (Live WebGL HomeScene) */
 .diorama-stage {
   position: relative;
   flex: 1;
-  min-height: 215px;
+  min-height: 225px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-}
-
-.diorama-canvas {
-  width: 290px;
-  height: 205px;
-  filter: drop-shadow(0 14px 20px rgba(0, 0, 0, 0.55));
+  justify-content: flex-end;
+  padding-bottom: 4px;
+  pointer-events: none;
 }
 
 .side-events-col {
@@ -295,36 +293,35 @@ body {
 }
 
 .mini-event-btn {
-  width: 56px;
+  width: 60px;
   padding: 5px 3px;
   border-radius: 10px;
-  background: rgba(17, 26, 51, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(17, 26, 51, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   color: #fff;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 9.5px;
+  font-weight: 800;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   text-align: center;
   cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
   transition: transform 0.12s;
 }
 .mini-event-btn:active {
   transform: scale(0.93);
 }
-.mini-event-btn .ev-icon {
-  font-size: 19px;
-  display: block;
-  margin-bottom: 1px;
-}
 
 .rank-trophy-pill {
-  margin-top: -12px;
-  width: 205px;
-  background: linear-gradient(180deg, #1b2838 0%, #0f1722 100%);
-  border: 2px solid #90a4ae;
+  width: 214px;
+  background: linear-gradient(180deg, #22324c 0%, #111b2b 100%);
+  border: 2px solid #b0bec5;
   border-radius: 10px;
   padding: 5px 12px;
   text-align: center;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.55);
 }
 
 .rank-title-text {
@@ -332,6 +329,10 @@ body {
   font-weight: 900;
   color: #fff;
   margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 
 .rank-bar-bg {
@@ -475,60 +476,69 @@ body {
   text-align: center;
   color: #1c252c;
 }
-.chest-icon {
-  font-size: 30px;
-  line-height: 1;
+.chest-3d-img {
+  width: 52px;
+  height: 46px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.35));
 }
 .chest-timer {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 900;
   color: #ffffff;
-  background: rgba(16, 32, 39, 0.8);
-  padding: 1px 6px;
+  background: rgba(16, 32, 39, 0.85);
+  padding: 1.5px 6px;
   border-radius: 99px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
 }
 
-/* Bottom Navigation Tabs (Screenshot 4 & 5) */
+/* Bottom Navigation Tabs (Screenshot 4 & 5 Authentic 3D Pedestals) */
 .bottom-nav {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  background: linear-gradient(180deg, #27375e 0%, #17223d 100%);
-  border-top: 2px solid rgba(255, 255, 255, 0.16);
-  padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, #324774 0%, #1d2a48 100%);
+  border-top: 2px solid rgba(255, 255, 255, 0.22);
+  padding: 3px 4px calc(4px + env(safe-area-inset-bottom, 0px));
   flex-shrink: 0;
 }
 
 .nav-tab {
-  height: 56px;
+  height: 62px;
   border: none;
   background: transparent;
-  color: #b0bec5;
+  color: #cfd8dc;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  font-size: 11.5px;
-  font-weight: 800;
+  gap: 1px;
+  font-size: 11px;
+  font-weight: 900;
   border-radius: 10px;
   cursor: pointer;
 }
 
-.nav-tab .nav-ico {
-  font-size: 22px;
-  line-height: 1.1;
+.nav-tab .nav-3d-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  margin-top: -3px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
 }
 
 .nav-tab.active {
-  background: linear-gradient(180deg, rgba(255, 213, 79, 0.32) 0%, rgba(255, 160, 0, 0.45) 100%);
-  color: #fff8e1;
-  border: 1px solid rgba(255, 224, 130, 0.65);
+  background: linear-gradient(180deg, rgba(255, 213, 79, 0.36) 0%, rgba(255, 160, 0, 0.56) 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 236, 179, 0.8);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 
-/* ======================== DECK / TROOPS SCREEN (Screenshot 5) ======================== */
+/* ======================== DECK / TROOPS SCREEN (Screenshot 5 Silver Plate) ======================== */
 .deck-panel-box {
-  background: rgba(20, 30, 56, 0.85);
-  border: 2px solid rgba(144, 164, 174, 0.45);
+  background: rgba(24, 36, 66, 0.9);
+  border: 2px solid rgba(154, 180, 212, 0.5);
   border-radius: 14px;
   padding: 10px;
 }
@@ -543,18 +553,22 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  background: rgba(236, 239, 241, 0.1);
-  padding: 7px;
-  border-radius: 10px;
+  background: linear-gradient(180deg, #e4edf7 0%, #c8d6e8 100%);
+  border: 1.5px solid #ffffff;
+  padding: 8px;
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 .support-1x2 {
   display: grid;
   grid-template-rows: 1fr 1fr;
   gap: 8px;
-  background: rgba(236, 239, 241, 0.1);
-  padding: 7px;
-  border-radius: 10px;
+  background: linear-gradient(180deg, #e4edf7 0%, #c8d6e8 100%);
+  border: 1.5px solid #ffffff;
+  padding: 8px;
+  border-radius: 11px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 .deck-preset-tabs {
@@ -627,9 +641,36 @@ body {
 
 .ra-card .card-art-img {
   width: 100%;
-  height: 68px;
+  height: 72px;
   object-fit: contain;
   margin-top: 2px;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4));
+}
+
+.slot-role-tag {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 9px;
+  background: rgba(8, 16, 30, 0.72);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 800;
+}
+
+.card-short-title {
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+  margin-bottom: 1px;
+}
+
+.cat-svg-badge {
+  display: inline-flex;
+  align-items: center;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
 }
 
 .ra-card .card-name-row {
@@ -974,21 +1015,36 @@ body {
 }
 
 .cmd-skill-btn {
-  width: 50px;
-  height: 50px;
+  position: relative;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  overflow: hidden;
   margin-bottom: 4px;
   border-radius: 10px;
   border: 2px solid #a5d6a7;
-  background: linear-gradient(180deg, #43a047 0%, #1b5e20 100%);
+  background: #1b5e20;
   color: #fff;
   font-size: 11px;
   font-weight: 900;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.55);
+}
+
+.cmd-cd-pill {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  right: 2px;
+  background: rgba(0, 0, 0, 0.72);
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 900;
+  color: #ffffff;
+  text-shadow: 0 1px 2px #000;
 }
 
 /* Screenshot 1 Floating Hex Card Tooltip */

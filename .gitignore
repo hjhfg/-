@@ -3,3 +3,7 @@ dist
 .vite
 .DS_Store
 *.log
+
+# Raw source assets cache
+raw_assets/
+

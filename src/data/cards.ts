@@ -65,16 +65,28 @@ export const RARITY_META: Record<
   },
 };
 
-export const CATEGORY_ICON: Record<UnitCategory, string> = {
-  infantry: '🪖',
-  vehicle: '🚙',
-  tank: '🛡️',
-  air: '✈️',
-  bunker_def: '🏰',
-  aa_def: '🚀',
-  laser_def: '⚡',
-  base: '🏛️',
-  mine: '💎',
+export const CATEGORY_LABEL: Record<UnitCategory, string> = {
+  infantry: '步兵',
+  vehicle: '战车',
+  tank: '重坦',
+  air: '空军',
+  bunker_def: '碉堡',
+  aa_def: '防空',
+  laser_def: '光棱',
+  base: '基地',
+  mine: '资源',
+};
+
+export const CATEGORY_BADGE_SVG: Record<UnitCategory, string> = {
+  infantry: `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffffff"><path d="M12 3C7 3 4 6.6 4 11.2V15l3 2.5V14c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2v3.5L20 15v-3.8C20 6.6 17 3 12 3z"/></svg>`,
+  vehicle: `<svg viewBox="0 0 24 24" width="16" height="16" fill="#ffffff"><path d="M5 11l2-4.5h10L19 11h2v5h-2a2.5 2.5 0 0 1-5 0h-4a2.5 2.5 0 0 1-5 0H3v-5h2zm2.5 4a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zm9 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"/></svg>`,
+  tank: `<svg viewBox="0 0 24 24" width="16" height="16" fill="#ffffff"><path d="M7 6h7v2.5h7v2H14V12h5a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3h2V6zm-1.5 9a1.5 1.5 0 1 0 0 3h13a1.5 1.5 0 1 0 0-3h-13z"/></svg>`,
+  air: `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffffff"><path d="M21 15v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V8l-8 5v2l8-2.5V19l-2.5 1.5V22L11.5 21l4 1v-1.5L13 19v-5.5L21 15z"/></svg>`,
+  bunker_def: `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffffff"><path d="M12 2L4 5.5v6.2C4 16.9 7.4 21.6 12 23c4.6-1.4 8-6.1 8-11.3V5.5L12 2zm0 4.5a3.5 3.5 0 0 1 3.5 3.5v4h-7v-4A3.5 3.5 0 0 1 12 6.5z"/></svg>`,
+  aa_def: `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffffff"><path d="M12 2L4 5.5v6.2C4 16.9 7.4 21.6 12 23c4.6-1.4 8-6.1 8-11.3V5.5L12 2zm1.5 5.5l2.5 2.5-5.5 5.5H8v-2.5l5.5-5.5z"/></svg>`,
+  laser_def: `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffffff"><path d="M13 2L5 13h6l-1 9 9-12h-6l0-8z"/></svg>`,
+  base: `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffffff"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5zm0 4.5L6.5 9.5v5L12 17.5l5.5-3v-5L12 6.5z"/></svg>`,
+  mine: `<svg viewBox="0 0 24 24" width="15" height="15" fill="#ffffff"><path d="M6 3h12l4 6-10 12L2 9l4-6zm2.5 3L6 9.5h12L15.5 6h-7z"/></svg>`,
 };
 
 export const CARDS: Record<string, CardDef> = {
