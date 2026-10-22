@@ -573,20 +573,20 @@ export class GameUI {
   private bindLobbyEvents(): void {
     this.root.querySelector('#btn-share-url')?.addEventListener('click', () => {
       sound.playClick();
-      const liveUrl = 'https://hjhfg.github.io/-/';
+      const instantUrl = 'https://raw.githack.com/hjhfg/-/arena/d056a933-repo/docs/index.html';
       const modal = document.createElement('div');
       modal.className = 'modal-backdrop';
       modal.innerHTML = `
         <div class="modal-card" style="text-align:center;">
           <h3 style="font-size:18px;color:#ffe082;margin-bottom:8px;">🌐 手机端在线部署地址</h3>
           <p style="font-size:12.5px;color:#cfd8dc;line-height:1.5;">
-            在手机浏览器（Safari / Chrome / 微信）打开以下公网地址，即可全屏触控畅玩《精英军团》：
+            复制以下公网直连地址在手机浏览器打开，即可全屏触控畅玩《精英军团》：
           </p>
-          <div style="margin:12px 0;padding:10px;border-radius:9px;background:rgba(0,0,0,0.45);border:1px solid #80d8ff;font-size:14px;font-weight:900;color:#69f0ae;user-select:text;-webkit-user-select:text;">
-            ${liveUrl}
+          <div style="margin:12px 0;padding:10px;border-radius:9px;background:rgba(0,0,0,0.45);border:1px solid #80d8ff;font-size:12px;word-break:break-all;font-weight:800;color:#69f0ae;user-select:text;-webkit-user-select:text;">
+            ${instantUrl}
           </div>
           <div style="display:flex;gap:8px;">
-            <button class="action-btn gold" id="btn-copy-link" style="flex:1;">📋 复制公网网址</button>
+            <button class="action-btn gold" id="btn-copy-link" style="flex:1;">📋 复制公网直连网址</button>
             <button class="action-btn secondary" id="btn-close-share">关闭</button>
           </div>
         </div>
@@ -594,8 +594,8 @@ export class GameUI {
       this.root.appendChild(modal);
       modal.querySelector('#btn-close-share')?.addEventListener('click', () => modal.remove());
       modal.querySelector('#btn-copy-link')?.addEventListener('click', () => {
-        navigator.clipboard?.writeText(liveUrl).catch(() => {});
-        this.showToast('✅ 已复制网址：https://hjhfg.github.io/-/', 'good');
+        navigator.clipboard?.writeText(instantUrl).catch(() => {});
+        this.showToast('✅ 已复制公网直连网址！', 'good');
         modal.remove();
       });
     });
