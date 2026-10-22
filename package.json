@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && node scripts/inline-docs.mjs",
-    "preview": "vite preview --host 0.0.0.0 --port 4173"
+    "preview": "node scripts/serve.mjs"
   },
   "dependencies": {
     "phaser": "^3.88.2"
